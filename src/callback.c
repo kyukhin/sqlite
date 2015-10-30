@@ -457,7 +457,8 @@ void sqlite3SchemaClear(void *p){
 ** Find and return the schema associated with a BTree.  Create
 ** a new one if necessary.
 */
-Schema *sqlite3SchemaGet(sqlite3 *db, Btree *pBt){
+
+Schema *sqlite3SchemaGet(sqlite3 *db, Btree *pBt){  
   Schema * p;
   if( pBt ){
     p = (Schema *)sqlite3BtreeSchema(pBt, sizeof(Schema), sqlite3SchemaClear);

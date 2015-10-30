@@ -955,13 +955,13 @@ static void callStatGet(Vdbe *v, int regStat4, int iParam, int regOut){
 static void analyzeOneTable(
   Parse *pParse,   /* Parser context */
   Table *pTab,     /* Table whose indices are to be analyzed */
-  Index *pOnlyIdx, /* If not NULL, only analyze this one index */
+  SIndex *pOnlyIdx, /* If not NULL, only analyze this one index */
   int iStatCur,    /* Index of VdbeCursor that writes the sqlite_stat1 table */
   int iMem,        /* Available memory locations begin here */
   int iTab         /* Next available cursor */
 ){
   sqlite3 *db = pParse->db;    /* Database handle */
-  Index *pIdx;                 /* An index to being analyzed */
+  SIndex *pIdx;                 /* An index to being analyzed */
   int iIdxCur;                 /* Cursor open on index being analyzed */
   int iTabCur;                 /* Table cursor */
   Vdbe *v;                     /* The virtual machine being built up */
@@ -1181,7 +1181,7 @@ static void analyzeOneTable(
     if( HasRowid(pTab) ){
       sqlite3VdbeAddOp2(v, OP_IdxRowid, iIdxCur, regRowid);
     }else{
-      Index *pPk = sqlite3PrimaryKeyIndex(pIdx->pTable);
+      SIndex *pPk = sqlite3PrimaryKeyIndex(pIdx->pTable);
       int j, k, regKey;
       regKey = sqlite3GetTempRange(pParse, pPk->nKeyCol);
       for(j=0; j<pPk->nKeyCol; j++){
@@ -1315,7 +1315,7 @@ static void analyzeDatabase(Parse *pParse, int iDb){
 ** a database.  If pOnlyIdx is not NULL then it is a single index
 ** in pTab that should be analyzed.
 */
-static void analyzeTable(Parse *pParse, Table *pTab, Index *pOnlyIdx){
+static void analyzeTable(Parse *pParse, Table *pTab, SIndex *pOnlyIdx){
   int iDb;
   int iStatCur;
 
@@ -1352,7 +1352,7 @@ void sqlite3Analyze(Parse *pParse, Token *pName1, Token *pName2){
   int i;
   char *z, *zDb;
   Table *pTab;
-  Index *pIdx;
+  SIndex *pIdx;
   Token *pTableName;
   Vdbe *v;
 
@@ -1426,7 +1426,7 @@ static void decodeIntArray(
   int nOut,              /* Number of slots in aOut[] */
   tRowcnt *aOut,         /* Store integers here */
   LogEst *aLog,          /* Or, if aOut==0, here */
-  Index *pIndex          /* Handle extra flags for this index, if not NULL */
+  SIndex *pIndex          /* Handle extra flags for this index, if not NULL */
 ){
   char *z = zIntArray;
   int c;
@@ -1494,7 +1494,7 @@ static void decodeIntArray(
 */
 static int analysisLoader(void *pData, int argc, char **argv, char **NotUsed){
   analysisInfo *pInfo = (analysisInfo*)pData;
-  Index *pIndex;
+  SIndex *pIndex;
   Table *pTable;
   const char *z;
 
@@ -1534,7 +1534,7 @@ static int analysisLoader(void *pData, int argc, char **argv, char **NotUsed){
     decodeIntArray((char*)z, nCol, aiRowEst, pIndex->aiRowLogEst, pIndex);
     if( pIndex->pPartIdxWhere==0 ) pTable->nRowLogEst = pIndex->aiRowLogEst[0];
   }else{
-    Index fakeIdx;
+    SIndex fakeIdx;
     fakeIdx.szIdxRow = pTable->szTabRow;
 #ifdef SQLITE_ENABLE_COSTMULT
     fakeIdx.pTable = pTable;
@@ -1550,7 +1550,7 @@ static int analysisLoader(void *pData, int argc, char **argv, char **NotUsed){
 ** If the Index.aSample variable is not NULL, delete the aSample[] array
 ** and its contents.
 */
-void sqlite3DeleteIndexSamples(sqlite3 *db, Index *pIdx){
+void sqlite3DeleteIndexSamples(sqlite3 *db, SIndex *pIdx){
 #ifdef SQLITE_ENABLE_STAT3_OR_STAT4
   if( pIdx->aSample ){
     int j;
@@ -1575,7 +1575,7 @@ void sqlite3DeleteIndexSamples(sqlite3 *db, Index *pIdx){
 ** Populate the pIdx->aAvgEq[] array based on the samples currently
 ** stored in pIdx->aSample[]. 
 */
-static void initAvgEq(Index *pIdx){
+static void initAvgEq(SIndex *pIdx){
   if( pIdx ){
     IndexSample *aSample = pIdx->aSample;
     IndexSample *pFinal = &aSample[pIdx->nSample-1];
@@ -1634,12 +1634,12 @@ static void initAvgEq(Index *pIdx){
 ** Look up an index by name.  Or, if the name of a WITHOUT ROWID table
 ** is supplied instead, find the PRIMARY KEY index for that table.
 */
-static Index *findIndexOrPrimaryKey(
+static SIndex *findIndexOrPrimaryKey(
   sqlite3 *db,
   const char *zName,
   const char *zDb
 ){
-  Index *pIdx = sqlite3FindIndex(db, zName, zDb);
+  SIndex *pIdx = sqlite3FindIndex(db, zName, zDb);
   if( pIdx==0 ){
     Table *pTab = sqlite3FindTable(db, zName, zDb);
     if( pTab && !HasRowid(pTab) ) pIdx = sqlite3PrimaryKeyIndex(pTab);
@@ -1670,7 +1670,7 @@ static int loadStatTbl(
   int rc;                       /* Result codes from subroutines */
   sqlite3_stmt *pStmt = 0;      /* An SQL statement being run */
   char *zSql;                   /* Text of the SQL statement */
-  Index *pPrevIdx = 0;          /* Previous index in the loop */
+  SIndex *pPrevIdx = 0;          /* Previous index in the loop */
   IndexSample *pSample;         /* A slot in pIdx->aSample[] */
 
   assert( db->lookaside.bEnabled==0 );
@@ -1686,7 +1686,7 @@ static int loadStatTbl(
     int nIdxCol = 1;              /* Number of columns in stat4 records */
 
     char *zIndex;   /* Index name */
-    Index *pIdx;    /* Pointer to the index object */
+    SIndex *pIdx;    /* Pointer to the index object */
     int nSample;    /* Number of samples */
     int nByte;      /* Bytes of space required */
     int i;          /* Bytes of space required */
@@ -1740,7 +1740,7 @@ static int loadStatTbl(
 
   while( sqlite3_step(pStmt)==SQLITE_ROW ){
     char *zIndex;                 /* Index name */
-    Index *pIdx;                  /* Pointer to the index object */
+    SIndex *pIdx;                  /* Pointer to the index object */
     int nCol = 1;                 /* Number of columns in index */
 
     zIndex = (char *)sqlite3_column_text(pStmt, 0);
@@ -1840,7 +1840,7 @@ int sqlite3AnalysisLoad(sqlite3 *db, int iDb){
   /* Clear any prior statistics */
   assert( sqlite3SchemaMutexHeld(db, iDb, 0) );
   for(i=sqliteHashFirst(&db->aDb[iDb].pSchema->idxHash);i;i=sqliteHashNext(i)){
-    Index *pIdx = sqliteHashData(i);
+    SIndex *pIdx = sqliteHashData(i);
     sqlite3DefaultRowEst(pIdx);
 #ifdef SQLITE_ENABLE_STAT3_OR_STAT4
     sqlite3DeleteIndexSamples(db, pIdx);
@@ -1875,7 +1875,7 @@ int sqlite3AnalysisLoad(sqlite3 *db, int iDb){
     db->lookaside.bEnabled = lookasideEnabled;
   }
   for(i=sqliteHashFirst(&db->aDb[iDb].pSchema->idxHash);i;i=sqliteHashNext(i)){
-    Index *pIdx = sqliteHashData(i);
+    SIndex *pIdx = sqliteHashData(i);
     sqlite3_free(pIdx->aiRowEst);
     pIdx->aiRowEst = 0;
   }

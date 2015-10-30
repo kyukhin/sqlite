@@ -1093,7 +1093,7 @@ sqlite3_value *sqlite3ValueNew(sqlite3 *db){
 */
 struct ValueNewStat4Ctx {
   Parse *pParse;
-  Index *pIdx;
+  SIndex *pIdx;
   UnpackedRecord **ppRec;
   int iVal;
 };
@@ -1115,7 +1115,7 @@ static sqlite3_value *valueNew(sqlite3 *db, struct ValueNewStat4Ctx *p){
     UnpackedRecord *pRec = p->ppRec[0];
 
     if( pRec==0 ){
-      Index *pIdx = p->pIdx;      /* Index being probed */
+      SIndex *pIdx = p->pIdx;      /* Index being probed */
       int nByte;                  /* Bytes of space to allocate */
       int i;                      /* Counter variable */
       int nCol = pIdx->nColumn;   /* Number of index columns including rowid */
@@ -1562,7 +1562,7 @@ static int stat4ValueFromExpr(
 */
 int sqlite3Stat4ProbeSetValue(
   Parse *pParse,                  /* Parse context */
-  Index *pIdx,                    /* Index being probed */
+  SIndex *pIdx,                    /* Index being probed */
   UnpackedRecord **ppRec,         /* IN/OUT: Probe record */
   Expr *pExpr,                    /* The expression to extract a value from */
   u8 affinity,                    /* Affinity to use */

@@ -40,7 +40,7 @@ void sqlite3OpenTable(
     sqlite3VdbeAddOp4Int(v, opcode, iCur, pTab->tnum, iDb, pTab->nCol);
     VdbeComment((v, "%s", pTab->zName));
   }else{
-    Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+    SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
     assert( pPk!=0 );
     assert( pPk->tnum==pTab->tnum );
     sqlite3VdbeAddOp3(v, opcode, iCur, pPk->tnum, iDb);
@@ -69,7 +69,7 @@ void sqlite3OpenTable(
 ** is managed along with the rest of the Index structure. It will be
 ** released when sqlite3DeleteIndex() is called.
 */
-const char *sqlite3IndexAffinityStr(sqlite3 *db, Index *pIdx){
+const char *sqlite3IndexAffinityStr(sqlite3 *db, SIndex *pIdx){
   if( !pIdx->zColAff ){
     /* The first time a column affinity string for a particular index is
     ** required, it is allocated and populated here. It is then stored as
@@ -174,7 +174,7 @@ static int readsTable(Parse *p, int iDb, Table *pTab){
     VdbeOp *pOp = sqlite3VdbeGetOp(v, i);
     assert( pOp!=0 );
     if( pOp->opcode==OP_OpenRead && pOp->p3==iDb ){
-      Index *pIndex;
+      SIndex *pIndex;
       int tnum = pOp->p2;
       if( tnum==pTab->tnum ){
         return 1;
@@ -459,7 +459,7 @@ void sqlite3Insert(
   const char *zDb;      /* Name of the database holding this table */
   int i, j, idx;        /* Loop counters */
   Vdbe *v;              /* Generate code into this virtual machine */
-  Index *pIdx;          /* For looping over indices of the table */
+  SIndex *pIdx;          /* For looping over indices of the table */
   int nColumn;          /* Number of columns in the data */
   int nHidden = 0;      /* Number of hidden columns if TABLE is virtual */
   int iDataCur = 0;     /* VDBE cursor that is the main data repository */
@@ -1152,8 +1152,8 @@ void sqlite3GenerateConstraintChecks(
   int *pbMayReplace    /* OUT: Set to true if constraint may cause a replace */
 ){
   Vdbe *v;             /* VDBE under constrution */
-  Index *pIdx;         /* Pointer to one of the indices */
-  Index *pPk = 0;      /* The PRIMARY KEY index */
+  SIndex *pIdx;         /* Pointer to one of the indices */
+  SIndex *pPk = 0;      /* The PRIMARY KEY index */
   sqlite3 *db;         /* Database connection */
   int i;               /* loop counter */
   int ix;              /* Index loop counter */
@@ -1573,7 +1573,7 @@ void sqlite3CompleteInsertion(
   int useSeekResult   /* True to set the USESEEKRESULT flag on OP_[Idx]Insert */
 ){
   Vdbe *v;            /* Prepared statements under construction */
-  Index *pIdx;        /* An index being inserted or updated */
+  SIndex *pIdx;        /* An index being inserted or updated */
   u8 pik_flags;       /* flag values passed to the btree insert */
   int regData;        /* Content registers (after the rowid) */
   int regRec;         /* Register holding assembled record for the table */
@@ -1657,7 +1657,7 @@ int sqlite3OpenTableAndIndices(
   int i;
   int iDb;
   int iDataCur;
-  Index *pIdx;
+  SIndex *pIdx;
   Vdbe *v;
 
   assert( op==OP_OpenRead || op==OP_OpenWrite );
@@ -1733,7 +1733,7 @@ static int xferCompatibleCollation(const char *z1, const char *z2){
 **    *   The same collating sequence on each column
 **    *   The index has the exact same WHERE clause
 */
-static int xferCompatibleIndex(Index *pDest, Index *pSrc){
+static int xferCompatibleIndex(SIndex *pDest, SIndex *pSrc){
   int i;
   assert( pDest && pSrc );
   assert( pDest->pTable!=pSrc->pTable );
@@ -1804,7 +1804,7 @@ static int xferOptimization(
   sqlite3 *db = pParse->db;
   ExprList *pEList;                /* The result set of the SELECT */
   Table *pSrc;                     /* The table in the FROM clause of SELECT */
-  Index *pSrcIdx, *pDestIdx;       /* Source and destination indices */
+  SIndex *pSrcIdx, *pDestIdx;       /* Source and destination indices */
   struct SrcList_item *pItem;      /* An element of pSelect->pSrc */
   int i;                           /* Loop counter */
   int iDbSrc;                      /* The database of pSrc */

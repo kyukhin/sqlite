@@ -224,7 +224,7 @@ void sqlite3DeleteFrom(
   const char *zDb;       /* Name of database holding pTab */
   int i;                 /* Loop counter */
   WhereInfo *pWInfo;     /* Information about the WHERE clause */
-  Index *pIdx;           /* For looping over indices of the table */
+  SIndex *pIdx;           /* For looping over indices of the table */
   int iTabCur;           /* Cursor number for the table */
   int iDataCur = 0;      /* VDBE cursor for the canonical data source */
   int iIdxCur = 0;       /* Cursor number of the first index */
@@ -238,7 +238,7 @@ void sqlite3DeleteFrom(
   int eOnePass;          /* ONEPASS_OFF or _SINGLE or _MULTI */
   int aiCurOnePass[2];   /* The write cursors opened by WHERE_ONEPASS */
   u8 *aToOpen = 0;       /* Open cursor iTabCur+j if aToOpen[j] is true */
-  Index *pPk;            /* The PRIMARY KEY index on the table */
+  SIndex *pPk;            /* The PRIMARY KEY index on the table */
   int iPk = 0;           /* First of nPk registers holding PRIMARY KEY value */
   i16 nPk = 1;           /* Number of columns in the PRIMARY KEY */
   int iKey;              /* Memory cell holding key of row to be deleted */
@@ -773,10 +773,10 @@ void sqlite3GenerateRowIndexDelete(
   int i;             /* Index loop counter */
   int r1 = -1;       /* Register holding an index key */
   int iPartIdxLabel; /* Jump destination for skipping partial index entries */
-  Index *pIdx;       /* Current index */
-  Index *pPrior = 0; /* Prior index */
+  SIndex *pIdx;       /* Current index */
+  SIndex *pPrior = 0; /* Prior index */
   Vdbe *v;           /* The prepared statement under construction */
-  Index *pPk;        /* PRIMARY KEY index, or NULL for rowid tables */
+  SIndex *pPk;        /* PRIMARY KEY index, or NULL for rowid tables */
 
   v = pParse->pVdbe;
   pPk = HasRowid(pTab) ? 0 : sqlite3PrimaryKeyIndex(pTab);
@@ -828,12 +828,12 @@ void sqlite3GenerateRowIndexDelete(
 */
 int sqlite3GenerateIndexKey(
   Parse *pParse,       /* Parsing context */
-  Index *pIdx,         /* The index for which to generate a key */
+  SIndex *pIdx,         /* The index for which to generate a key */
   int iDataCur,        /* Cursor number from which to take column data */
   int regOut,          /* Put the new key into this register if not 0 */
   int prefixOnly,      /* Compute only a unique prefix of the key */
   int *piPartIdxLabel, /* OUT: Jump to this label to skip partial index */
-  Index *pPrior,       /* Previously generated index key */
+  SIndex *pPrior,       /* Previously generated index key */
   int regPrior         /* Register holding previous generated key */
 ){
   Vdbe *v = pParse->pVdbe;

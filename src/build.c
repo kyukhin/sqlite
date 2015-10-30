@@ -422,8 +422,8 @@ Table *sqlite3LocateTableItem(
 ** TEMP first, then MAIN, then any auxiliary databases added
 ** using the ATTACH command.
 */
-Index *sqlite3FindIndex(sqlite3 *db, const char *zName, const char *zDb){
-  Index *p = 0;
+SIndex *sqlite3FindIndex(sqlite3 *db, const char *zName, const char *zDb){
+  SIndex *p = 0;
   int i;
   /* All mutexes are required for schema access.  Make sure we hold them. */
   assert( zDb!=0 || sqlite3BtreeHoldsAllMutexes(db) );
@@ -442,7 +442,7 @@ Index *sqlite3FindIndex(sqlite3 *db, const char *zName, const char *zDb){
 /*
 ** Reclaim the memory used by an index
 */
-static void freeIndex(sqlite3 *db, Index *p){
+static void freeIndex(sqlite3 *db, SIndex *p){
 #ifndef SQLITE_OMIT_ANALYZE
   sqlite3DeleteIndexSamples(db, p);
 #endif
@@ -463,7 +463,7 @@ static void freeIndex(sqlite3 *db, Index *p){
 ** with the index.
 */
 void sqlite3UnlinkAndDeleteIndex(sqlite3 *db, int iDb, const char *zIdxName){
-  Index *pIndex;
+  SIndex *pIndex;
   Hash *pHash;
 
   assert( sqlite3SchemaMutexHeld(db, iDb, 0) );
@@ -473,7 +473,7 @@ void sqlite3UnlinkAndDeleteIndex(sqlite3 *db, int iDb, const char *zIdxName){
     if( pIndex->pTable->pIndex==pIndex ){
       pIndex->pTable->pIndex = pIndex->pNext;
     }else{
-      Index *p;
+      SIndex *p;
       /* Justification of ALWAYS();  The index must be on the list of
       ** indices. */
       p = pIndex->pTable->pIndex;
@@ -606,7 +606,7 @@ void sqlite3DeleteColumnNames(sqlite3 *db, Table *pTable){
 ** used by the Table object.
 */
 void sqlite3DeleteTable(sqlite3 *db, Table *pTable){
-  Index *pIndex, *pNext;
+  SIndex *pIndex, *pNext;
   TESTONLY( int nLookaside; ) /* Used to verify lookaside not used for schema */
 
   assert( !pTable || pTable->nRef>0 );
@@ -627,7 +627,7 @@ void sqlite3DeleteTable(sqlite3 *db, Table *pTable){
     assert( pIndex->pSchema==pTable->pSchema );
     if( !db || db->pnBytesFreed==0 ){
       char *zName = pIndex->zName; 
-      TESTONLY ( Index *pOld = ) sqlite3HashInsert(
+      TESTONLY ( SIndex *pOld = ) sqlite3HashInsert(
          &pIndex->pSchema->idxHash, zName, 0
       );
       assert( db==0 || sqlite3SchemaMutexHeld(db, 0, pIndex->pSchema) );
@@ -811,8 +811,8 @@ int sqlite3CheckObjectName(Parse *pParse, const char *zName){
 /*
 ** Return the PRIMARY KEY index of a table
 */
-Index *sqlite3PrimaryKeyIndex(Table *pTab){
-  Index *p;
+SIndex *sqlite3PrimaryKeyIndex(Table *pTab){
+  SIndex *p;
   for(p=pTab->pIndex; p && !IsPrimaryKeyIndex(p); p=p->pNext){}
   return p;
 }
@@ -821,7 +821,7 @@ Index *sqlite3PrimaryKeyIndex(Table *pTab){
 ** Return the column of index pIdx that corresponds to table
 ** column iCol.  Return -1 if not found.
 */
-i16 sqlite3ColumnOfIndex(Index *pIdx, i16 iCol){
+i16 sqlite3ColumnOfIndex(SIndex *pIdx, i16 iCol){
   int i;
   for(i=0; i<pIdx->nColumn; i++){
     if( iCol==pIdx->aiColumn[i] ) return i;
@@ -1344,7 +1344,7 @@ void sqlite3AddPrimaryKey(
        "INTEGER PRIMARY KEY");
 #endif
   }else{
-    Index *p;
+    SIndex *p;
     p = sqlite3CreateIndex(pParse, 0, 0, 0, pList, onError, 0,
                            0, sortOrder, 0);
     if( p ){
@@ -1399,7 +1399,7 @@ void sqlite3AddCollateType(Parse *pParse, Token *pToken){
   if( !zColl ) return;
 
   if( sqlite3LocateCollSeq(pParse, zColl) ){
-    Index *pIdx;
+    SIndex *pIdx;
     sqlite3DbFree(db, p->aCol[i].zColl);
     p->aCol[i].zColl = zColl;
   
@@ -1604,7 +1604,7 @@ static char *createTableStmt(sqlite3 *db, Table *p){
 ** Resize an Index object to hold N columns total.  Return SQLITE_OK
 ** on success and SQLITE_NOMEM on an OOM error.
 */
-static int resizeIndexObject(sqlite3 *db, Index *pIdx, int N){
+static int resizeIndexObject(sqlite3 *db, SIndex *pIdx, int N){
   char *zExtra;
   int nByte;
   if( pIdx->nColumn>=N ) return SQLITE_OK;
@@ -1642,7 +1642,7 @@ static void estimateTableWidth(Table *pTab){
 /*
 ** Estimate the average size of a row for an index.
 */
-static void estimateIndexWidth(Index *pIdx){
+static void estimateIndexWidth(SIndex *pIdx){
   unsigned wIndex = 0;
   int i;
   const Column *aCol = pIdx->pTable->aCol;
@@ -1685,8 +1685,8 @@ static int hasColumn(const i16 *aiCol, int nCol, int x){
 **          indices with the PRIMARY KEY columns.
 */
 static void convertToWithoutRowidTable(Parse *pParse, Table *pTab){
-  Index *pIdx;
-  Index *pPk;
+  SIndex *pIdx;
+  SIndex *pPk;
   int nPk;
   int i, j;
   sqlite3 *db = pParse->db;
@@ -1835,7 +1835,7 @@ void sqlite3EndTable(
   Table *p;                 /* The new table */
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
-  Index *pIdx;              /* An implied index of the table */
+  SIndex *pIdx;              /* An implied index of the table */
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -2289,7 +2289,7 @@ void sqlite3RootPageMoved(sqlite3 *db, int iDb, int iFrom, int iTo){
   }
   pHash = &pDb->pSchema->idxHash;
   for(pElem=sqliteHashFirst(pHash); pElem; pElem=sqliteHashNext(pElem)){
-    Index *pIdx = sqliteHashData(pElem);
+    SIndex *pIdx = sqliteHashData(pElem);
     if( pIdx->tnum==iFrom ){
       pIdx->tnum = iTo;
     }
@@ -2360,7 +2360,7 @@ static void destroyTable(Parse *pParse, Table *pTab){
   int iDestroyed = 0;
 
   while( 1 ){
-    Index *pIdx;
+    SIndex *pIdx;
     int iLargest = 0;
 
     if( iDestroyed==0 || iTab<iDestroyed ){
@@ -2740,7 +2740,7 @@ void sqlite3DeferForeignKey(Parse *pParse, int isDeferred){
 ** the index already exists and must be cleared before being refilled and
 ** the root page number of the index is taken from pIndex->tnum.
 */
-static void sqlite3RefillIndex(Parse *pParse, Index *pIndex, int memRootPage){
+static void sqlite3RefillIndex(Parse *pParse, SIndex *pIndex, int memRootPage){
   Table *pTab = pIndex->pTable;  /* The table that is indexed */
   int iTab = pParse->nTab++;     /* Btree cursor used for pTab */
   int iIdx = pParse->nTab++;     /* Btree cursor used for pIndex */
@@ -2827,23 +2827,23 @@ static void sqlite3RefillIndex(Parse *pParse, Index *pIndex, int memRootPage){
 ** of 8-byte aligned space after the Index object and return a
 ** pointer to this extra space in *ppExtra.
 */
-Index *sqlite3AllocateIndexObject(
+SIndex *sqlite3AllocateIndexObject(
   sqlite3 *db,         /* Database connection */
   i16 nCol,            /* Total number of columns in the index */
   int nExtra,          /* Number of bytes of extra space to alloc */
   char **ppExtra       /* Pointer to the "extra" space */
 ){
-  Index *p;            /* Allocated index object */
+  SIndex *p;            /* Allocated index object */
   int nByte;           /* Bytes of space for Index object + arrays */
 
-  nByte = ROUND8(sizeof(Index)) +              /* Index structure  */
+  nByte = ROUND8(sizeof(SIndex)) +              /* Index structure  */
           ROUND8(sizeof(char*)*nCol) +         /* Index.azColl     */
           ROUND8(sizeof(LogEst)*(nCol+1) +     /* Index.aiRowLogEst   */
                  sizeof(i16)*nCol +            /* Index.aiColumn   */
                  sizeof(u8)*nCol);             /* Index.aSortOrder */
   p = sqlite3DbMallocZero(db, nByte + nExtra);
   if( p ){
-    char *pExtra = ((char*)p)+ROUND8(sizeof(Index));
+    char *pExtra = ((char*)p)+ROUND8(sizeof(SIndex));
     p->azColl = (char**)pExtra;       pExtra += ROUND8(sizeof(char*)*nCol);
     p->aiRowLogEst = (LogEst*)pExtra; pExtra += sizeof(LogEst)*(nCol+1);
     p->aiColumn = (i16*)pExtra;       pExtra += sizeof(i16)*nCol;
@@ -2895,7 +2895,7 @@ static void sqlite3StringToId(Expr *p){
 ** structure. This is used by sqlite3AddPrimaryKey() to mark the index
 ** as the tables primary key (Index.idxType==SQLITE_IDXTYPE_PRIMARYKEY)
 */
-Index *sqlite3CreateIndex(
+SIndex *sqlite3CreateIndex(
   Parse *pParse,     /* All information about this parse */
   Token *pName1,     /* First part of index name. May be NULL */
   Token *pName2,     /* Second part of index name. May be NULL */
@@ -2907,9 +2907,9 @@ Index *sqlite3CreateIndex(
   int sortOrder,     /* Sort order of primary key when pList==NULL */
   int ifNotExist     /* Omit error if index already exists */
 ){
-  Index *pRet = 0;     /* Pointer to return */
+  SIndex *pRet = 0;     /* Pointer to return */
   Table *pTab = 0;     /* Table to be indexed */
-  Index *pIndex = 0;   /* The index to be created */
+  SIndex *pIndex = 0;   /* The index to be created */
   char *zName = 0;     /* Name of the index */
   int nName;           /* Number of characters in zName */
   int i, j;
@@ -2923,7 +2923,7 @@ Index *sqlite3CreateIndex(
   int nExtra = 0;                  /* Space allocated for zExtra[] */
   int nExtraCol;                   /* Number of extra columns needed */
   char *zExtra = 0;                /* Extra space after the Index object */
-  Index *pPk = 0;      /* PRIMARY KEY index for WITHOUT ROWID tables */
+  SIndex *pPk = 0;      /* PRIMARY KEY index for WITHOUT ROWID tables */
 
   if( db->mallocFailed || IN_DECLARE_VTAB || pParse->nErr>0 ){
     goto exit_create_index;
@@ -3045,7 +3045,7 @@ Index *sqlite3CreateIndex(
     }
   }else{
     int n;
-    Index *pLoop;
+    SIndex *pLoop;
     for(pLoop=pTab->pIndex, n=1; pLoop; pLoop=pLoop->pNext, n++){}
     zName = sqlite3MPrintf(db, "sqlite_autoindex_%s_%d", pTab->zName, n);
     if( zName==0 ){
@@ -3247,7 +3247,7 @@ Index *sqlite3CreateIndex(
     ** the constraint occur in different orders, then the constraints are
     ** considered distinct and both result in separate indices.
     */
-    Index *pIdx;
+    SIndex *pIdx;
     for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
       int k;
       assert( IsUniqueIndex(pIdx) );
@@ -3292,7 +3292,7 @@ Index *sqlite3CreateIndex(
   */
   assert( pParse->nErr==0 );
   if( db->init.busy ){
-    Index *p;
+    SIndex *p;
     assert( sqlite3SchemaMutexHeld(db, 0, pIndex->pSchema) );
     p = sqlite3HashInsert(&pIndex->pSchema->idxHash, 
                           pIndex->zName, pIndex);
@@ -3392,7 +3392,7 @@ Index *sqlite3CreateIndex(
       pIndex->pNext = pTab->pIndex;
       pTab->pIndex = pIndex;
     }else{
-      Index *pOther = pTab->pIndex;
+      SIndex *pOther = pTab->pIndex;
       while( pOther->pNext && pOther->pNext->onError!=OE_Replace ){
         pOther = pOther->pNext;
       }
@@ -3431,7 +3431,7 @@ exit_create_index:
 ** how aiRowEst[] should be initialized.  The numbers generated here
 ** are based on typical values found in actual indices.
 */
-void sqlite3DefaultRowEst(Index *pIdx){
+void sqlite3DefaultRowEst(SIndex *pIdx){
   /*                10,  9,  8,  7,  6 */
   LogEst aVal[] = { 33, 32, 30, 28, 26 };
   LogEst *a = pIdx->aiRowLogEst;
@@ -3460,7 +3460,7 @@ void sqlite3DefaultRowEst(Index *pIdx){
 ** implements the DROP INDEX statement.
 */
 void sqlite3DropIndex(Parse *pParse, SrcList *pName, int ifExists){
-  Index *pIndex;
+  SIndex *pIndex;
   Vdbe *v;
   sqlite3 *db = pParse->db;
   int iDb;
@@ -4142,7 +4142,7 @@ void sqlite3HaltConstraint(
 void sqlite3UniqueConstraint(
   Parse *pParse,    /* Parsing context */
   int onError,      /* Constraint type */
-  Index *pIdx       /* The index that triggers the constraint */
+  SIndex *pIdx       /* The index that triggers the constraint */
 ){
   char *zErr;
   int j;
@@ -4196,7 +4196,7 @@ void sqlite3RowidConstraint(
 ** true if it does and false if it does not.
 */
 #ifndef SQLITE_OMIT_REINDEX
-static int collationMatch(const char *zColl, Index *pIndex){
+static int collationMatch(const char *zColl, SIndex *pIndex){
   int i;
   assert( zColl!=0 );
   for(i=0; i<pIndex->nColumn; i++){
@@ -4216,7 +4216,7 @@ static int collationMatch(const char *zColl, Index *pIndex){
 */
 #ifndef SQLITE_OMIT_REINDEX
 static void reindexTable(Parse *pParse, Table *pTab, char const *zColl){
-  Index *pIndex;              /* An index associated with pTab */
+  SIndex *pIndex;              /* An index associated with pTab */
 
   for(pIndex=pTab->pIndex; pIndex; pIndex=pIndex->pNext){
     if( zColl==0 || collationMatch(zColl, pIndex) ){
@@ -4271,7 +4271,7 @@ void sqlite3Reindex(Parse *pParse, Token *pName1, Token *pName2){
   char *z;                    /* Name of a table or index */
   const char *zDb;            /* Name of the database */
   Table *pTab;                /* A table in the database */
-  Index *pIndex;              /* An index associated with pTab */
+  SIndex *pIndex;              /* An index associated with pTab */
   int iDb;                    /* The database index number */
   sqlite3 *db = pParse->db;   /* The database connection */
   Token *pObjName;            /* Name of the table or index to be reindexed */
@@ -4330,7 +4330,7 @@ void sqlite3Reindex(Parse *pParse, Token *pName1, Token *pName2){
 ** The caller should invoke sqlite3KeyInfoUnref() on the returned object
 ** when it has finished using it.
 */
-KeyInfo *sqlite3KeyInfoOfIndex(Parse *pParse, Index *pIdx){
+KeyInfo *sqlite3KeyInfoOfIndex(Parse *pParse, SIndex *pIdx){
   int i;
   int nCol = pIdx->nColumn;
   int nKey = pIdx->nKeyCol;

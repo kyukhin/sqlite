@@ -107,7 +107,7 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed){
     ** been created when we processed the CREATE TABLE.  All we have
     ** to do here is record the root page number for that index.
     */
-    Index *pIndex;
+    SIndex *pIndex;
     pIndex = sqlite3FindIndex(db, argv[0], db->aDb[iDb].zName);
     if( pIndex==0 ){
       /* This can occur if there exists an index on a TEMP table which
@@ -123,6 +123,8 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed){
   return 0;
 }
 
+
+
 /*
 ** Attempt to read the database schema and initialize internal
 ** data structures for a single database file.  The index of the
@@ -131,6 +133,30 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed){
 ** auxiliary databases.  Return one of the SQLITE_ error codes to
 ** indicate success or failure.
 */
+
+// static int trntl_sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
+//   if (iDb == 1) {
+//     return sqlite3InitOne(db, iDb, pzErrMsg);
+//   }
+//   static const char master_schema[] = 
+//      "CREATE TABLE sqlite_master(\n"
+//      "  type text,\n"
+//      "  name text,\n"
+//      "  tbl_name text,\n"
+//      "  rootpage integer,\n"
+//      "  sql text\n"
+//      ")"
+//   ; 
+
+//   Table *pTab;
+//   Db *pDb;
+
+//   pDb = &db->aDb[iDb];
+
+//   Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema);
+//   return SQLITE_OK;
+// }
+
 static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   int rc;
   int i;
@@ -215,6 +241,15 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
       DbSetProperty(db, 1, DB_SchemaLoaded);
     }
     return SQLITE_OK;
+  }
+  
+  //Tarantool: here we add new tables to db
+  if (iDb == 0) {
+    Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema);
+    for(HashElem *p = sqliteHashFirst(&tblHash); p; p = sqliteHashNext(p)){
+      Table *data = sqliteHashData(p);
+      sqlite3HashInsert(&(pDb->pSchema->tblHash), data->zName, data);
+    }
   }
 
   /* If there is not already a read-only (or read-write) transaction opened
@@ -389,6 +424,24 @@ error_out:
 ** bit is set in the flags field of the Db structure. If the database
 ** file was of zero-length, then the DB_Empty flag is also set.
 */
+
+// int trntl_sqlite3Init(sqlite3 *db, char **pzErrMsg){
+//   int i, rc;
+//   assert( db->init.busy==0 );
+//   rc = SQLITE_OK;
+//   db->init.busy = 1;
+//   ENC(db) = SCHEMA_ENC(db);
+//   for(i=0; rc==SQLITE_OK && i<db->nDb; i++){
+//     if( DbHasProperty(db, i, DB_SchemaLoaded) || i==1 ) continue;
+//     rc = trntl_sqlite3InitOne(db, i, pzErrMsg);
+//     if( rc ){
+//       sqlite3ResetOneSchema(db, i);
+//     }
+//   }
+//   db->init.busy = 0;
+//   return rc;
+// }
+
 int sqlite3Init(sqlite3 *db, char **pzErrMsg){
   int i, rc;
   int commit_internal = !(db->flags&SQLITE_InternChanges);

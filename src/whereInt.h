@@ -83,7 +83,7 @@ struct WhereLevel {
         u8 eEndLoopOp;         /* IN Loop terminator. OP_Next or OP_Prev */
       } *aInLoop;           /* Information about each nested IN operator */
     } in;                 /* Used when pWLoop->wsFlags&WHERE_IN_ABLE */
-    Index *pCovidx;       /* Possible covering index for WHERE_MULTI_OR */
+    SIndex *pCovidx;       /* Possible covering index for WHERE_MULTI_OR */
   } u;
   struct WhereLoop *pWLoop;  /* The selected WhereLoop object */
   Bitmask notReady;          /* FROM entries not usable at this level */
@@ -120,7 +120,7 @@ struct WhereLoop {
   union {
     struct {               /* Information for internal btree tables */
       u16 nEq;               /* Number of equality constraints */
-      Index *pIndex;         /* Index used, or NULL */
+      SIndex *pIndex;         /* Index used, or NULL */
     } btree;
     struct {               /* Information for virtual tables */
       int idxNum;            /* Index number */
@@ -438,7 +438,7 @@ WhereTerm *sqlite3WhereFindTerm(
   int iColumn,          /* Column number of LHS */
   Bitmask notReady,     /* RHS must not overlap with this mask */
   u32 op,               /* Mask of WO_xx values describing operator */
-  Index *pIdx           /* Must be compatible with this index, if not NULL */
+  SIndex *pIdx           /* Must be compatible with this index, if not NULL */
 );
 
 /* wherecode.c: */

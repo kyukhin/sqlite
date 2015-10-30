@@ -173,7 +173,7 @@ static int hasSharedCacheTableLock(
   if( isIndex ){
     HashElem *p;
     for(p=sqliteHashFirst(&pSchema->idxHash); p; p=sqliteHashNext(p)){
-      Index *pIdx = (Index *)sqliteHashData(p);
+      SIndex *pIdx = (SIndex *)sqliteHashData(p);
       if( pIdx->tnum==(int)iRoot ){
         if( iTab ){
           /* Two or more indexes share the same root page.  There must

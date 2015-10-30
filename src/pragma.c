@@ -1012,7 +1012,7 @@ void sqlite3Pragma(
       int i, k;
       int nHidden = 0;
       Column *pCol;
-      Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+      SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
       pParse->nMem = 6;
       sqlite3CodeVerifySchema(pParse, iDb);
       setAllColumnNames(v, 6, azCol); assert( 6==ArraySize(azCol) );
@@ -1044,7 +1044,7 @@ void sqlite3Pragma(
 
   case PragTyp_STATS: {
     static const char *azCol[] = { "table", "index", "width", "height" };
-    Index *pIdx;
+    SIndex *pIdx;
     HashElem *i;
     v = sqlite3GetVdbe(pParse);
     pParse->nMem = 4;
@@ -1070,7 +1070,7 @@ void sqlite3Pragma(
   break;
 
   case PragTyp_INDEX_INFO: if( zRight ){
-    Index *pIdx;
+    SIndex *pIdx;
     Table *pTab;
     pIdx = sqlite3FindIndex(db, zRight, zDb);
     if( pIdx ){
@@ -1109,7 +1109,7 @@ void sqlite3Pragma(
   break;
 
   case PragTyp_INDEX_LIST: if( zRight ){
-    Index *pIdx;
+    SIndex *pIdx;
     Table *pTab;
     int i;
     pTab = sqlite3FindTable(db, zRight, zDb);
@@ -1213,7 +1213,7 @@ void sqlite3Pragma(
     FKey *pFK;             /* A foreign key constraint */
     Table *pTab;           /* Child table contain "REFERENCES" keyword */
     Table *pParent;        /* Parent table that child points to */
-    Index *pIdx;           /* Index in the parent table */
+    SIndex *pIdx;           /* Index in the parent table */
     int i;                 /* Loop counter:  Foreign key number for pTab */
     int j;                 /* Loop counter:  Field of the foreign key */
     HashElem *k;           /* Loop counter:  Next table in schema */
@@ -1420,7 +1420,7 @@ void sqlite3Pragma(
       pTbls = &db->aDb[i].pSchema->tblHash;
       for(x=sqliteHashFirst(pTbls); x; x=sqliteHashNext(x)){
         Table *pTab = sqliteHashData(x);
-        Index *pIdx;
+        SIndex *pIdx;
         if( HasRowid(pTab) ){
           sqlite3VdbeAddOp2(v, OP_Integer, pTab->tnum, 2+cnt);
           VdbeComment((v, "%s", pTab->zName));
@@ -1452,8 +1452,8 @@ void sqlite3Pragma(
       */
       for(x=sqliteHashFirst(pTbls); x && !isQuick; x=sqliteHashNext(x)){
         Table *pTab = sqliteHashData(x);
-        Index *pIdx, *pPk;
-        Index *pPrior = 0;
+        SIndex *pIdx, *pPk;
+        SIndex *pPrior = 0;
         int loopTop;
         int iDataCur, iIdxCur;
         int r1 = -1;

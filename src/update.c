@@ -98,8 +98,8 @@ void sqlite3Update(
   int addrTop = 0;       /* VDBE instruction address of the start of the loop */
   WhereInfo *pWInfo;     /* Information about the WHERE clause */
   Vdbe *v;               /* The virtual database engine */
-  Index *pIdx;           /* For looping over indices */
-  Index *pPk;            /* The PRIMARY KEY index for WITHOUT ROWID tables */
+  SIndex *pIdx;           /* For looping over indices */
+  SIndex *pPk;            /* The PRIMARY KEY index for WITHOUT ROWID tables */
   int nIdx;              /* Number of indices that need updating */
   int iBaseCur;          /* Base cursor number */
   int iDataCur;          /* Cursor for the canonical data btree */

@@ -226,7 +226,7 @@ int sqlite3_blob_open(
     ** descriptions applies for writing.  */
     if( flags ){
       const char *zFault = 0;
-      Index *pIdx;
+      SIndex *pIdx;
 #ifndef SQLITE_OMIT_FOREIGN_KEY
       if( db->flags&SQLITE_ForeignKeys ){
         /* Check that the column is not part of an FK child key definition. It

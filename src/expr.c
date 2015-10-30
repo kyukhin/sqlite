@@ -1742,7 +1742,7 @@ int sqlite3FindInIndex(Parse *pParse, Expr *pX, u32 inFlags, int *prRhsHasNull){
 
       sqlite3VdbeJumpHere(v, iAddr);
     }else{
-      Index *pIdx;                         /* Iterator variable */
+      SIndex *pIdx;                         /* Iterator variable */
 
       /* The collation sequence used by the comparison. If an index is to
       ** be used in place of a temp-table, it must be ordered according
@@ -2437,7 +2437,7 @@ static void sqlite3ExprCachePinRegister(Parse *pParse, int iReg){
 */
 void sqlite3ExprCodeLoadIndexColumn(
   Parse *pParse,  /* The parsing context */
-  Index *pIdx,    /* The index whose column is to be loaded */
+  SIndex *pIdx,    /* The index whose column is to be loaded */
   int iTabCur,    /* Cursor pointing to a table row */
   int iIdxCol,    /* The column of the index to be loaded */
   int regOut      /* Store the index column value in this register */

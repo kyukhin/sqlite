@@ -914,7 +914,7 @@ void sqlite3VdbeChangeP4(Vdbe *p, int addr, const char *zP4, int n){
 ** Set the P4 on the most recently added opcode to the KeyInfo for the
 ** index given.
 */
-void sqlite3VdbeSetP4KeyInfo(Parse *pParse, Index *pIdx){
+void sqlite3VdbeSetP4KeyInfo(Parse *pParse, SIndex *pIdx){
   Vdbe *v = pParse->pVdbe;
   assert( v!=0 );
   assert( pIdx!=0 );

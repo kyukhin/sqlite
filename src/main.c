@@ -2644,6 +2644,10 @@ int sqlite3ParseUri(
 ** sqlite3_open() and sqlite3_open16(). The database filename "zFilename"  
 ** is UTF-8 encoded.
 */
+
+sql_tarantool_api global_trn_api;
+char global_trn_api_is_ready = 0;
+
 static int openDatabase(
   const char *zFilename, /* Database filename UTF-8 encoded */
   sqlite3 **ppDb,        /* OUT: Returned database handle */
@@ -2726,6 +2730,12 @@ static int openDatabase(
   /* Allocate the sqlite data structure */
   db = sqlite3MallocZero( sizeof(sqlite3) );
   if( db==0 ) goto opendb_out;
+
+  if (global_trn_api_is_ready) {
+    db->trn_api = global_trn_api;
+    global_trn_api_is_ready = 0;
+  }
+
   if( isThreadsafe ){
     db->mutex = sqlite3MutexAlloc(SQLITE_MUTEX_RECURSIVE);
     if( db->mutex==0 ){

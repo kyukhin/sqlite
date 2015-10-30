@@ -277,7 +277,7 @@ static WhereTerm *whereScanInit(
   int iCur,               /* Cursor to scan for */
   int iColumn,            /* Column to scan for */
   u32 opMask,             /* Operator(s) to scan for */
-  Index *pIdx             /* Must be compatible with this index */
+  SIndex *pIdx             /* Must be compatible with this index */
 ){
   int j = 0;
 
@@ -336,7 +336,7 @@ WhereTerm *sqlite3WhereFindTerm(
   int iColumn,          /* Column number of LHS */
   Bitmask notReady,     /* RHS must not overlap with this mask */
   u32 op,               /* Mask of WO_xx values describing operator */
-  Index *pIdx           /* Must be compatible with this index, if not NULL */
+  SIndex *pIdx           /* Must be compatible with this index, if not NULL */
 ){
   WhereTerm *pResult = 0;
   WhereTerm *p;
@@ -368,7 +368,7 @@ static int findIndexCol(
   Parse *pParse,                  /* Parse context */
   ExprList *pList,                /* Expression list to search */
   int iBase,                      /* Cursor for table associated with pIdx */
-  Index *pIdx,                    /* Index to match column of */
+  SIndex *pIdx,                    /* Index to match column of */
   int iCol                        /* Column of index to match */
 ){
   int i;
@@ -393,7 +393,7 @@ static int findIndexCol(
 /*
 ** Return TRUE if the iCol-th column of index pIdx is NOT NULL
 */
-static int indexColumnNotNull(Index *pIdx, int iCol){
+static int indexColumnNotNull(SIndex *pIdx, int iCol){
   int j;
   assert( pIdx!=0 );
   assert( iCol>=0 && iCol<pIdx->nColumn );
@@ -423,7 +423,7 @@ static int isDistinctRedundant(
   ExprList *pDistinct       /* The result set that needs to be DISTINCT */
 ){
   Table *pTab;
-  Index *pIdx;
+  SIndex *pIdx;
   int i;                          
   int iBase;
 
@@ -596,7 +596,7 @@ static void constructAutomaticIndex(
   int nKeyCol;                /* Number of columns in the constructed index */
   WhereTerm *pTerm;           /* A single term of the WHERE clause */
   WhereTerm *pWCEnd;          /* End of pWC->a[] */
-  Index *pIdx;                /* Object describing the transient index */
+  SIndex *pIdx;                /* Object describing the transient index */
   Vdbe *v;                    /* Prepared statement under construction */
   int addrInit;               /* Address of the initialization bypass jump */
   Table *pTable;              /* The table being indexed */
@@ -958,7 +958,7 @@ static int vtabBestIndex(Parse *pParse, Table *pTab, sqlite3_index_info *p){
 */
 static int whereKeyStats(
   Parse *pParse,              /* Database connection */
-  Index *pIdx,                /* Index to consider domain of */
+  SIndex *pIdx,                /* Index to consider domain of */
   UnpackedRecord *pRec,       /* Vector of values to consider */
   int roundUp,                /* Round up if true.  Round down if false */
   tRowcnt *aStat              /* OUT: stats written here */
@@ -1165,7 +1165,7 @@ static LogEst whereRangeAdjust(WhereTerm *pTerm, LogEst nNew){
 /*
 ** Return the affinity for a single column of an index.
 */
-static char sqlite3IndexColumnAffinity(sqlite3 *db, Index *pIdx, int iCol){
+static char sqlite3IndexColumnAffinity(sqlite3 *db, SIndex *pIdx, int iCol){
   assert( iCol>=0 && iCol<pIdx->nColumn );
   if( !pIdx->zColAff ){
     if( sqlite3IndexAffinityStr(db, pIdx)==0 ) return SQLITE_AFF_BLOB;
@@ -1218,7 +1218,7 @@ static int whereRangeSkipScanEst(
   WhereLoop *pLoop,    /* Update the .nOut value of this loop */
   int *pbDone          /* Set to true if at least one expr. value extracted */
 ){
-  Index *p = pLoop->u.btree.pIndex;
+  SIndex *p = pLoop->u.btree.pIndex;
   int nEq = pLoop->u.btree.nEq;
   sqlite3 *db = pParse->db;
   int nLower = -1;
@@ -1335,7 +1335,7 @@ static int whereRangeScanEst(
   LogEst nNew;
 
 #ifdef SQLITE_ENABLE_STAT3_OR_STAT4
-  Index *p = pLoop->u.btree.pIndex;
+  SIndex *p = pLoop->u.btree.pIndex;
   int nEq = pLoop->u.btree.nEq;
 
   if( p->nSample>0 && nEq<p->nSampleCol ){
@@ -1504,7 +1504,7 @@ static int whereEqualScanEst(
   Expr *pExpr,         /* Expression for VALUE in the x=VALUE constraint */
   tRowcnt *pnRow       /* Write the revised row estimate here */
 ){
-  Index *p = pBuilder->pNew->u.btree.pIndex;
+  SIndex *p = pBuilder->pNew->u.btree.pIndex;
   int nEq = pBuilder->pNew->u.btree.nEq;
   UnpackedRecord *pRec = pBuilder->pRec;
   u8 aff;                   /* Column affinity */
@@ -1569,7 +1569,7 @@ static int whereInScanEst(
   ExprList *pList,     /* The value list on the RHS of "x IN (v1,v2,v3,...)" */
   tRowcnt *pnRow       /* Write the revised row estimate here */
 ){
-  Index *p = pBuilder->pNew->u.btree.pIndex;
+  SIndex *p = pBuilder->pNew->u.btree.pIndex;
   i64 nRow0 = sqlite3LogEstToInt(p->aiRowLogEst[0]);
   int nRecValid = pBuilder->nRecValid;
   int rc = SQLITE_OK;     /* Subfunction return code */
@@ -2037,7 +2037,7 @@ static int whereLoopInsert(WhereLoopBuilder *pBuilder, WhereLoop *pTemplate){
   }
   whereLoopXfer(db, p, pTemplate);
   if( (p->wsFlags & WHERE_VIRTUALTABLE)==0 ){
-    Index *pIndex = p->u.btree.pIndex;
+    SIndex *pIndex = p->u.btree.pIndex;
     if( pIndex && pIndex->tnum==0 ){
       p->u.btree.pIndex = 0;
     }
@@ -2145,7 +2145,7 @@ static void whereLoopOutputAdjust(
 static int whereLoopAddBtreeIndex(
   WhereLoopBuilder *pBuilder,     /* The WhereLoop factory */
   struct SrcList_item *pSrc,      /* FROM clause term being analyzed */
-  Index *pProbe,                  /* An index on pSrc */
+  SIndex *pProbe,                  /* An index on pSrc */
   LogEst nInMul                   /* log(Number of iterations due to IN) */
 ){
   WhereInfo *pWInfo = pBuilder->pWInfo;  /* WHERE analyse context */
@@ -2426,7 +2426,7 @@ static int whereLoopAddBtreeIndex(
 */
 static int indexMightHelpWithOrderBy(
   WhereLoopBuilder *pBuilder,
-  Index *pIndex,
+  SIndex *pIndex,
   int iCursor
 ){
   ExprList *pOB;
@@ -2458,7 +2458,7 @@ static int indexMightHelpWithOrderBy(
 ** Return a bitmask where 1s indicate that the corresponding column of
 ** the table is used by an index.  Only the first 63 columns are considered.
 */
-static Bitmask columnsInIndex(Index *pIdx){
+static Bitmask columnsInIndex(SIndex *pIdx){
   Bitmask m = 0;
   int j;
   for(j=pIdx->nColumn-1; j>=0; j--){
@@ -2534,8 +2534,8 @@ static int whereLoopAddBtree(
   Bitmask mExtra              /* Extra prerequesites for using this table */
 ){
   WhereInfo *pWInfo;          /* WHERE analysis context */
-  Index *pProbe;              /* An index we are evaluating */
-  Index sPk;                  /* A fake index object for the primary key */
+  SIndex *pProbe;              /* An index we are evaluating */
+  SIndex sPk;                  /* A fake index object for the primary key */
   LogEst aiRowEstPk[2];       /* The aiRowLogEst[] value for the sPk index */
   i16 aiColumnPk = -1;        /* The aColumn[] value for the sPk index */
   SrcList *pTabList;          /* The FROM clause */
@@ -2567,8 +2567,8 @@ static int whereLoopAddBtree(
     ** variable sPk to represent the rowid primary key index.  Make this
     ** fake index the first in a chain of Index objects with all of the real
     ** indices to follow */
-    Index *pFirst;                  /* First of real indices on the table */
-    memset(&sPk, 0, sizeof(Index));
+    SIndex *pFirst;                  /* First of real indices on the table */
+    memset(&sPk, 0, sizeof(SIndex));
     sPk.nKeyCol = 1;
     sPk.nColumn = 1;
     sPk.aiColumn = &aiColumnPk;
@@ -3146,7 +3146,7 @@ static i8 wherePathSatisfiesOrderBy(
   WhereTerm *pTerm;     /* A single term of the WHERE clause */
   Expr *pOBExpr;        /* An expression from the ORDER BY clause */
   CollSeq *pColl;       /* COLLATE function from an ORDER BY clause term */
-  Index *pIndex;        /* The index associated with pLoop */
+  SIndex *pIndex;        /* The index associated with pLoop */
   sqlite3 *db = pWInfo->pParse->db;  /* Database connection */
   Bitmask obSat = 0;    /* Mask of ORDER BY terms satisfied so far */
   Bitmask obDone;       /* Mask of all ORDER BY terms */
@@ -3813,7 +3813,7 @@ static int whereShortCut(WhereLoopBuilder *pBuilder){
   int iCur;
   int j;
   Table *pTab;
-  Index *pIdx;
+  SIndex *pIdx;
   
   pWInfo = pBuilder->pWInfo;
   if( pWInfo->wctrlFlags & WHERE_FORCE_TABLE ) return 0;
@@ -4303,7 +4303,7 @@ WhereInfo *sqlite3WhereBegin(
       sqlite3TableLock(pParse, iDb, pTab->tnum, 0, pTab->zName);
     }
     if( pLoop->wsFlags & WHERE_INDEXED ){
-      Index *pIx = pLoop->u.btree.pIndex;
+      SIndex *pIx = pLoop->u.btree.pIndex;
       int iIndexCur;
       int op = OP_OpenRead;
       /* iIdxCur is always set if to a positive value if ONEPASS is possible */
@@ -4316,7 +4316,7 @@ WhereInfo *sqlite3WhereBegin(
         iIndexCur = pLevel->iTabCur;
         op = 0;
       }else if( pWInfo->eOnePass!=ONEPASS_OFF ){
-        Index *pJ = pTabItem->pTab->pIndex;
+        SIndex *pJ = pTabItem->pTab->pIndex;
         iIndexCur = iIdxCur;
         assert( wctrlFlags & WHERE_ONEPASS_DESIRED );
         while( ALWAYS(pJ) && pJ!=pIx ){
@@ -4497,7 +4497,7 @@ void sqlite3WhereEnd(WhereInfo *pWInfo){
   for(i=0, pLevel=pWInfo->a; i<pWInfo->nLevel; i++, pLevel++){
     int k, last;
     VdbeOp *pOp;
-    Index *pIdx = 0;
+    SIndex *pIdx = 0;
     struct SrcList_item *pTabItem = &pTabList->a[pLevel->iFrom];
     Table *pTab = pTabItem->pTab;
     assert( pTab!=0 );
@@ -4563,7 +4563,7 @@ void sqlite3WhereEnd(WhereInfo *pWInfo){
           int x = pOp->p2;
           assert( pIdx->pTable==pTab );
           if( !HasRowid(pTab) ){
-            Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+            SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
             x = pPk->aiColumn[x];
             assert( x>=0 );
           }

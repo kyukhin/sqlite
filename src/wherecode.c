@@ -44,7 +44,7 @@ static void explainAppendTerm(
 /*
 ** Return the name of the i-th column of the pIdx index.
 */
-static const char *explainIndexColumnName(Index *pIdx, int i){
+static const char *explainIndexColumnName(SIndex *pIdx, int i){
   i = pIdx->aiColumn[i];
   if( i==XN_EXPR ) return "<expr>";
   if( i==XN_ROWID ) return "rowid";
@@ -66,7 +66,7 @@ static const char *explainIndexColumnName(Index *pIdx, int i){
 **   "a=? AND b>?"
 */
 static void explainIndexRange(StrAccum *pStr, WhereLoop *pLoop){
-  Index *pIndex = pLoop->u.btree.pIndex;
+  SIndex *pIndex = pLoop->u.btree.pIndex;
   u16 nEq = pLoop->u.btree.nEq;
   u16 nSkip = pLoop->nSkip;
   int i, j;
@@ -145,7 +145,7 @@ int sqlite3WhereExplainOneScan(
     }
     if( (flags & (WHERE_IPK|WHERE_VIRTUALTABLE))==0 ){
       const char *zFmt = 0;
-      Index *pIdx;
+      SIndex *pIdx;
 
       assert( pLoop->u.btree.pIndex!=0 );
       pIdx = pLoop->u.btree.pIndex;
@@ -473,7 +473,7 @@ static int codeAllEqualityTerms(
   u16 nEq;                      /* The number of == or IN constraints to code */
   u16 nSkip;                    /* Number of left-most columns to skip */
   Vdbe *v = pParse->pVdbe;      /* The vm under construction */
-  Index *pIdx;                  /* The index being used for this loop */
+  SIndex *pIdx;                  /* The index being used for this loop */
   WhereTerm *pTerm;             /* A single constraint term */
   WhereLoop *pLoop;             /* The WhereLoop object */
   int j;                        /* Loop counter */
@@ -879,7 +879,7 @@ Bitmask sqlite3WhereCodeOneLoopStart(
     int endEq;                   /* True if range end uses ==, >= or <= */
     int start_constraints;       /* Start of range is constrained */
     int nConstraint;             /* Number of constraint terms */
-    Index *pIdx;                 /* The index we will be using */
+    SIndex *pIdx;                 /* The index we will be using */
     int iIdxCur;                 /* The VDBE cursor for the index */
     int nExtraReg = 0;           /* Number of extra registers needed */
     int op;                      /* Instruction opcode */
@@ -1076,7 +1076,7 @@ Bitmask sqlite3WhereCodeOneLoopStart(
         sqlite3VdbeAddOp2(v, OP_Seek, iCur, iRowidReg);  /* Deferred seek */
       }
     }else if( iCur!=iIdxCur ){
-      Index *pPk = sqlite3PrimaryKeyIndex(pIdx->pTable);
+      SIndex *pPk = sqlite3PrimaryKeyIndex(pIdx->pTable);
       iRowidReg = sqlite3GetTempRange(pParse, pPk->nKeyCol);
       for(j=0; j<pPk->nKeyCol; j++){
         k = sqlite3ColumnOfIndex(pIdx, pPk->aiColumn[j]);
@@ -1152,7 +1152,7 @@ Bitmask sqlite3WhereCodeOneLoopStart(
     */
     WhereClause *pOrWc;    /* The OR-clause broken out into subterms */
     SrcList *pOrTab;       /* Shortened table list or OR-clause generation */
-    Index *pCov = 0;             /* Potential covering index (or NULL) */
+    SIndex *pCov = 0;             /* Potential covering index (or NULL) */
     int iCovCur = pParse->nTab++;  /* Cursor used for index scans (if any) */
 
     int regReturn = ++pParse->nMem;           /* Register used with OP_Gosub */
@@ -1213,7 +1213,7 @@ Bitmask sqlite3WhereCodeOneLoopStart(
         regRowset = ++pParse->nMem;
         sqlite3VdbeAddOp2(v, OP_Null, 0, regRowset);
       }else{
-        Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+        SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
         regRowset = pParse->nTab++;
         sqlite3VdbeAddOp2(v, OP_OpenEphemeral, regRowset, pPk->nKeyCol);
         sqlite3VdbeSetP4KeyInfo(pParse, pPk);
@@ -1296,7 +1296,7 @@ Bitmask sqlite3WhereCodeOneLoopStart(
               j1 = sqlite3VdbeAddOp4Int(v, OP_RowSetTest, regRowset, 0, r,iSet);
               VdbeCoverage(v);
             }else{
-              Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+              SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
               int nPk = pPk->nKeyCol;
               int iPk;
 

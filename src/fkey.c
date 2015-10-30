@@ -184,10 +184,10 @@ int sqlite3FkLocateIndex(
   Parse *pParse,                  /* Parse context to store any error in */
   Table *pParent,                 /* Parent table of FK constraint pFKey */
   FKey *pFKey,                    /* Foreign key to find index for */
-  Index **ppIdx,                  /* OUT: Unique index on parent table */
+  SIndex **ppIdx,                  /* OUT: Unique index on parent table */
   int **paiCol                    /* OUT: Map of index columns in pFKey */
 ){
-  Index *pIdx = 0;                    /* Value to return via *ppIdx */
+  SIndex *pIdx = 0;                    /* Value to return via *ppIdx */
   int *aiCol = 0;                     /* Value to return via *paiCol */
   int nCol = pFKey->nCol;             /* Number of columns in parent key */
   char *zKey = pFKey->aCol[0].zCol;   /* Name of left-most parent key column */
@@ -321,7 +321,7 @@ static void fkLookupParent(
   Parse *pParse,        /* Parse context */
   int iDb,              /* Index of database housing pTab */
   Table *pTab,          /* Parent table of FK pFKey */
-  Index *pIdx,          /* Unique index on parent key columns in pTab */
+  SIndex *pIdx,          /* Unique index on parent key columns in pTab */
   FKey *pFKey,          /* Foreign key constraint */
   int *aiCol,           /* Map from parent key columns to child table columns */
   int regData,          /* Address of array containing child table row */
@@ -541,7 +541,7 @@ static void fkScanChildren(
   Parse *pParse,                  /* Parse context */
   SrcList *pSrc,                  /* The child table to be scanned */
   Table *pTab,                    /* The parent table */
-  Index *pIdx,                    /* Index on parent covering the foreign key */
+  SIndex *pIdx,                    /* Index on parent covering the foreign key */
   FKey *pFKey,                    /* The foreign key linking pSrc to pTab */
   int *aiCol,                     /* Map from pIdx cols to child table cols */
   int regData,                    /* Parent row data starts here */
@@ -611,7 +611,7 @@ static void fkScanChildren(
       pNe = sqlite3PExpr(pParse, TK_NE, pLeft, pRight, 0);
     }else{
       Expr *pEq, *pAll = 0;
-      Index *pPk = sqlite3PrimaryKeyIndex(pTab);
+      SIndex *pPk = sqlite3PrimaryKeyIndex(pTab);
       assert( pIdx!=0 );
       for(i=0; i<pPk->nKeyCol; i++){
         i16 iCol = pIdx->aiColumn[i];
@@ -879,7 +879,7 @@ void sqlite3FkCheck(
   ** child table (the table that the foreign key definition is part of).  */
   for(pFKey=pTab->pFKey; pFKey; pFKey=pFKey->pNextFrom){
     Table *pTo;                   /* Parent table of foreign key pFKey */
-    Index *pIdx = 0;              /* Index on key columns in pTo */
+    SIndex *pIdx = 0;              /* Index on key columns in pTo */
     int *aiFree = 0;
     int *aiCol;
     int iCol;
@@ -979,7 +979,7 @@ void sqlite3FkCheck(
   /* Loop through all the foreign key constraints that refer to this table.
   ** (the "child" constraints) */
   for(pFKey = sqlite3FkReferences(pTab); pFKey; pFKey=pFKey->pNextTo){
-    Index *pIdx = 0;              /* Foreign key index for pFKey */
+    SIndex *pIdx = 0;              /* Foreign key index for pFKey */
     SrcList *pSrc;
     int *aiCol = 0;
 
@@ -1064,7 +1064,7 @@ u32 sqlite3FkOldmask(
       for(i=0; i<p->nCol; i++) mask |= COLUMN_MASK(p->aCol[i].iFrom);
     }
     for(p=sqlite3FkReferences(pTab); p; p=p->pNextTo){
-      Index *pIdx = 0;
+      SIndex *pIdx = 0;
       sqlite3FkLocateIndex(pParse, pTab, p, &pIdx, 0);
       if( pIdx ){
         for(i=0; i<pIdx->nKeyCol; i++){
@@ -1170,7 +1170,7 @@ static Trigger *fkActionTrigger(
     u8 enableLookaside;           /* Copy of db->lookaside.bEnabled */
     char const *zFrom;            /* Name of child table */
     int nFrom;                    /* Length in bytes of zFrom */
-    Index *pIdx = 0;              /* Parent key index for this FK */
+    SIndex *pIdx = 0;              /* Parent key index for this FK */
     int *aiCol = 0;               /* child table cols -> parent key cols */
     TriggerStep *pStep = 0;        /* First (only) step of trigger program */
     Expr *pWhere = 0;             /* WHERE clause of trigger step */

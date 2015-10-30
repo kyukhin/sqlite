@@ -3884,7 +3884,7 @@ int sqlite3IndexedByLookup(Parse *pParse, struct SrcList_item *pFrom){
   if( pFrom->pTab && pFrom->fg.isIndexedBy ){
     Table *pTab = pFrom->pTab;
     char *zIndexedBy = pFrom->u1.zIndexedBy;
-    Index *pIdx;
+    SIndex *pIdx;
     for(pIdx=pTab->pIndex; 
         pIdx && sqlite3StrICmp(pIdx->zName, zIndexedBy); 
         pIdx=pIdx->pNext
@@ -4732,7 +4732,7 @@ static void updateAccumulator(Parse *pParse, AggInfo *pAggInfo){
 static void explainSimpleCount(
   Parse *pParse,                  /* Parse context */
   Table *pTab,                    /* Table being queried */
-  Index *pIdx                     /* Index used to optimize scan, or NULL */
+  SIndex *pIdx                     /* Index used to optimize scan, or NULL */
 ){
   if( pParse->explain==2 ){
     int bCover = (pIdx!=0 && (HasRowid(pTab) || !IsPrimaryKeyIndex(pIdx)));
@@ -5460,9 +5460,9 @@ int sqlite3Select(
         */
         const int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
         const int iCsr = pParse->nTab++;     /* Cursor to scan b-tree */
-        Index *pIdx;                         /* Iterator variable */
+        SIndex *pIdx;                         /* Iterator variable */
         KeyInfo *pKeyInfo = 0;               /* Keyinfo for scanned index */
-        Index *pBest = 0;                    /* Best index found so far */
+        SIndex *pBest = 0;                    /* Best index found so far */
         int iRoot = pTab->tnum;              /* Root page of scanned b-tree */
 
         sqlite3CodeVerifySchema(pParse, iDb);

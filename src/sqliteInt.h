@@ -260,10 +260,7 @@
   + defined(SQLITE_WIN32_MALLOC) \
   + defined(SQLITE_ZERO_MALLOC) \
   + defined(SQLITE_MEMDEBUG)>1
-# error "Two or more of the following compile-time configuration options\
- are defined but at most one is allowed:\
- SQLITE_SYSTEM_MALLOC, SQLITE_WIN32_MALLOC, SQLITE_MEMDEBUG,\
- SQLITE_ZERO_MALLOC"
+# error "Two or more of the following compile-time configuration options are defined but at most one is allowed: SQLITE_SYSTEM_MALLOC, SQLITE_WIN32_MALLOC, SQLITE_MEMDEBUG, SQLITE_ZERO_MALLOC"
 #endif
 #if defined(SQLITE_SYSTEM_MALLOC) \
   + defined(SQLITE_WIN32_MALLOC) \
@@ -679,7 +676,7 @@ typedef INT16_TYPE LogEst;
 ** at run-time.
 */
 #ifdef SQLITE_AMALGAMATION
-const int sqlite3one = 1;
+//const int sqlite3one = 1;
 #else
 extern const int sqlite3one;
 #endif
@@ -929,7 +926,7 @@ typedef struct FuncDestructor FuncDestructor;
 typedef struct FuncDef FuncDef;
 typedef struct FuncDefHash FuncDefHash;
 typedef struct IdList IdList;
-typedef struct Index Index;
+typedef struct SIndex SIndex;
 typedef struct IndexSample IndexSample;
 typedef struct KeyClass KeyClass;
 typedef struct KeyInfo KeyInfo;
@@ -1131,6 +1128,18 @@ void sqlite3CryptFunc(sqlite3_context*,int,sqlite3_value**);
                                const char*);
 #endif
 
+/*
+** Struct for containing functions and objects of tarantool API
+** by which data is received from tarantool storage instead of
+** btree.
+*/
+typedef struct sql_tarantool_api {
+  void *self;                   /* Pointer to internal tarantool objects */
+  Hash (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg, Schema *pSchema);
+} sql_tarantool_api;
+
+extern sql_tarantool_api global_trn_api;
+extern char global_trn_api_is_ready;
 
 /*
 ** Each database connection is an instance of the following structure.
@@ -1248,6 +1257,8 @@ struct sqlite3 {
 #ifdef SQLITE_USER_AUTHENTICATION
   sqlite3_userauth auth;        /* User authentication information */
 #endif
+
+  sql_tarantool_api trn_api;    /* API for tarantool */
 };
 
 /*
@@ -1640,7 +1651,7 @@ struct VTable {
 struct Table {
   char *zName;         /* Name of the table or view */
   Column *aCol;        /* Information about each column */
-  Index *pIndex;       /* List of SQL indexes on this table. */
+  SIndex *pIndex;       /* List of SQL indexes on this table. */
   Select *pSelect;     /* NULL for tables.  Points to definition if a view. */
   FKey *pFKey;         /* Linked list of all foreign keys in this table */
   char *zColAff;       /* String defining the affinity of each column */
@@ -1872,13 +1883,13 @@ struct UnpackedRecord {
 ** number (it cannot - the database page is not allocated until the VDBE
 ** program is executed). See convertToWithoutRowidTable() for details.
 */
-struct Index {
+struct SIndex {
   char *zName;             /* Name of this index */
   i16 *aiColumn;           /* Which columns are used by this index.  1st is 0 */
   LogEst *aiRowLogEst;     /* From ANALYZE: Est. rows selected by each column */
   Table *pTable;           /* The SQL table being indexed */
   char *zColAff;           /* String defining the affinity of each column */
-  Index *pNext;            /* The next index associated with the same table */
+  SIndex *pNext;            /* The next index associated with the same table */
   Schema *pSchema;         /* Schema containing this index */
   u8 *aSortOrder;          /* for each column: True==DESC, False==ASC */
   char **azColl;           /* Array of collation sequence names for index */
@@ -2325,7 +2336,7 @@ struct SrcList {
       char *zIndexedBy;    /* Identifier from "INDEXED BY <zIndex>" clause */
       ExprList *pFuncArg;  /* Arguments to table-valued-function */
     } u1;
-    Index *pIBIndex;  /* Index structure corresponding to u1.zIndexedBy */
+    SIndex *pIBIndex;  /* Index structure corresponding to u1.zIndexedBy */
   } a[1];             /* One entry for each identifier on the list */
 };
 
@@ -3288,8 +3299,8 @@ void sqlite3DeleteColumnNames(sqlite3*,Table*);
 int sqlite3ColumnsFromExprList(Parse*,ExprList*,i16*,Column**);
 Table *sqlite3ResultSetOfSelect(Parse*,Select*);
 void sqlite3OpenMasterTable(Parse *, int);
-Index *sqlite3PrimaryKeyIndex(Table*);
-i16 sqlite3ColumnOfIndex(Index*, i16);
+SIndex *sqlite3PrimaryKeyIndex(Table*);
+i16 sqlite3ColumnOfIndex(SIndex*, i16);
 void sqlite3StartTable(Parse*,Token*,Token*,int,int,int,int);
 void sqlite3AddColumn(Parse*,Token*);
 void sqlite3AddNotNull(Parse*, int);
@@ -3363,8 +3374,8 @@ void sqlite3SrcListShiftJoinType(SrcList*);
 void sqlite3SrcListAssignCursors(Parse*, SrcList*);
 void sqlite3IdListDelete(sqlite3*, IdList*);
 void sqlite3SrcListDelete(sqlite3*, SrcList*);
-Index *sqlite3AllocateIndexObject(sqlite3*,i16,int,char**);
-Index *sqlite3CreateIndex(Parse*,Token*,Token*,SrcList*,ExprList*,int,Token*,
+SIndex *sqlite3AllocateIndexObject(sqlite3*,i16,int,char**);
+SIndex *sqlite3CreateIndex(Parse*,Token*,Token*,SrcList*,ExprList*,int,Token*,
                           Expr*, int, int);
 void sqlite3DropIndex(Parse*, SrcList*, int);
 int sqlite3Select(Parse*, Select*, SelectDest*);
@@ -3391,7 +3402,7 @@ int sqlite3WhereOkOnePass(WhereInfo*, int*);
 #define ONEPASS_OFF      0        /* Use of ONEPASS not allowed */
 #define ONEPASS_SINGLE   1        /* ONEPASS valid for a single row update */
 #define ONEPASS_MULTI    2        /* ONEPASS is valid for multiple rows */
-void sqlite3ExprCodeLoadIndexColumn(Parse*, Index*, int, int, int);
+void sqlite3ExprCodeLoadIndexColumn(Parse*, SIndex*, int, int, int);
 int sqlite3ExprCodeGetColumn(Parse*, Table*, int, int, int, u8);
 void sqlite3ExprCodeGetColumnOfTable(Vdbe*, Table*, int, int, int);
 void sqlite3ExprCodeMove(Parse*, int, int, int);
@@ -3417,7 +3428,7 @@ void sqlite3ExprIfFalseDup(Parse*, Expr*, int, int);
 Table *sqlite3FindTable(sqlite3*,const char*, const char*);
 Table *sqlite3LocateTable(Parse*,int isView,const char*, const char*);
 Table *sqlite3LocateTableItem(Parse*,int isView,struct SrcList_item *);
-Index *sqlite3FindIndex(sqlite3*,const char*, const char*);
+SIndex *sqlite3FindIndex(sqlite3*,const char*, const char*);
 void sqlite3UnlinkAndDeleteTable(sqlite3*,int,const char*);
 void sqlite3UnlinkAndDeleteIndex(sqlite3*,int,const char*);
 void sqlite3Vacuum(Parse*);
@@ -3454,7 +3465,7 @@ int sqlite3IsRowid(const char*);
 void sqlite3GenerateRowDelete(
     Parse*,Table*,Trigger*,int,int,int,i16,u8,u8,u8,int);
 void sqlite3GenerateRowIndexDelete(Parse*, Table*, int, int, int*, int);
-int sqlite3GenerateIndexKey(Parse*, Index*, int, int, int, int*,Index*,int);
+int sqlite3GenerateIndexKey(Parse*, SIndex*, int, int, int, int*,SIndex*,int);
 void sqlite3ResolvePartIdxLabel(Parse*,int);
 void sqlite3GenerateConstraintChecks(Parse*,Table*,int*,int,int,int,int,
                                      u8,u8,int,int*);
@@ -3464,7 +3475,7 @@ void sqlite3BeginWriteOperation(Parse*, int, int);
 void sqlite3MultiWrite(Parse*);
 void sqlite3MayAbort(Parse*);
 void sqlite3HaltConstraint(Parse*, int, int, char*, i8, u8);
-void sqlite3UniqueConstraint(Parse*, int, Index*);
+void sqlite3UniqueConstraint(Parse*, int, SIndex*);
 void sqlite3RowidConstraint(Parse*, int, Table*);
 Expr *sqlite3ExprDup(sqlite3*,Expr*,int);
 ExprList *sqlite3ExprListDup(sqlite3*,ExprList*,int);
@@ -3585,7 +3596,7 @@ int sqlite3VarintLen(u64 v);
 #define putVarint    sqlite3PutVarint
 
 
-const char *sqlite3IndexAffinityStr(sqlite3*, Index*);
+const char *sqlite3IndexAffinityStr(sqlite3*, SIndex*);
 void sqlite3TableAffinity(Vdbe*, Table*, int);
 char sqlite3CompareAffinity(Expr *pExpr, char aff2);
 int sqlite3IndexAffinityOk(Expr *pExpr, char idx_affinity);
@@ -3671,8 +3682,8 @@ int sqlite3InvokeBusyHandler(BusyHandler*);
 int sqlite3FindDb(sqlite3*, Token*);
 int sqlite3FindDbName(sqlite3 *, const char *);
 int sqlite3AnalysisLoad(sqlite3*,int iDB);
-void sqlite3DeleteIndexSamples(sqlite3*,Index*);
-void sqlite3DefaultRowEst(Index*);
+void sqlite3DeleteIndexSamples(sqlite3*,SIndex*);
+void sqlite3DefaultRowEst(SIndex*);
 void sqlite3RegisterLikeFunctions(sqlite3*, int);
 int sqlite3IsLikeFunction(sqlite3*,Expr*,int*,char*);
 void sqlite3MinimumFileFormat(Parse*, int, int);
@@ -3682,7 +3693,7 @@ int sqlite3SchemaToIndex(sqlite3 *db, Schema *);
 KeyInfo *sqlite3KeyInfoAlloc(sqlite3*,int,int);
 void sqlite3KeyInfoUnref(KeyInfo*);
 KeyInfo *sqlite3KeyInfoRef(KeyInfo*);
-KeyInfo *sqlite3KeyInfoOfIndex(Parse*, Index*);
+KeyInfo *sqlite3KeyInfoOfIndex(Parse*, SIndex*);
 #ifdef SQLITE_DEBUG
 int sqlite3KeyInfoIsWriteable(KeyInfo*);
 #endif
@@ -3708,7 +3719,7 @@ void sqlite3BackupUpdate(sqlite3_backup *, Pgno, const u8 *);
 
 #ifdef SQLITE_ENABLE_STAT3_OR_STAT4
 void sqlite3AnalyzeFunctions(void);
-int sqlite3Stat4ProbeSetValue(Parse*,Index*,UnpackedRecord**,Expr*,u8,int,int*);
+int sqlite3Stat4ProbeSetValue(Parse*,SIndex*,UnpackedRecord**,Expr*,u8,int,int*);
 int sqlite3Stat4ValueFromExpr(Parse*, Expr*, u8, sqlite3_value**);
 void sqlite3Stat4ProbeFree(UnpackedRecord*);
 int sqlite3Stat4Column(sqlite3*, const void*, int, int, sqlite3_value**);
@@ -3824,7 +3835,7 @@ const char *sqlite3JournalModename(int);
 #endif
 #ifndef SQLITE_OMIT_FOREIGN_KEY
   void sqlite3FkDelete(sqlite3 *, Table*);
-  int sqlite3FkLocateIndex(Parse*,Table*,FKey*,Index**,int**);
+  int sqlite3FkLocateIndex(Parse*,Table*,FKey*,SIndex**,int**);
 #else
   #define sqlite3FkDelete(a,b)
   #define sqlite3FkLocateIndex(a,b,c,d,e)

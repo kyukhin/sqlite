@@ -814,7 +814,7 @@ static int exprMightBeIndexed(
   int *piCur,            /* Write the referenced table cursor number here */
   int *piColumn          /* Write the referenced table column number here */
 ){
-  Index *pIdx;
+  SIndex *pIdx;
   int i;
   int iCur;
   if( pExpr->op==TK_COLUMN ){
