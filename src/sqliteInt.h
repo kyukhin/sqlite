@@ -1135,7 +1135,25 @@ void sqlite3CryptFunc(sqlite3_context*,int,sqlite3_value**);
 */
 typedef struct sql_tarantool_api {
   void *self;                   /* Pointer to internal tarantool objects */
-  Hash (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg, Schema *pSchema);
+  /* Get Hash object with tarantool spaces */
+  Hash (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg,
+                          Schema *pSchema);
+/*
+** For more function details look at sqlite3BtreeCursor...() functions
+*/
+  /* Create TarantoolCursor in pCur->trntl_cursor */
+  int (*trntl_cursor_create)(void *self, Btree *p, int iTable, int wrFlag,
+                              struct KeyInfo *pKeyInfo, BtCursor *pCur);
+  /* Move pCur->trntl_cursor to first record */
+  int (*trntl_cursor_first)(void *self, BtCursor *pCur, int *pRes); 
+  /* Get size of current tuple with its header */
+  int (*trntl_cursor_data_size)(void *self, BtCursor *pCur, u32 *pSize);
+  /* Get pointer to current tuple with header */
+  const void *(*trntl_cursor_data_fetch)(void *self, BtCursor *pCur, u32 *pAmt);
+  /* Move cursor forward */
+  int (*trntl_cursor_next)(void *self, BtCursor *pCur, int *pRes);
+
+  int (*trntl_cursor_close)(void *self, BtCursor *pCur);
 } sql_tarantool_api;
 
 extern sql_tarantool_api global_trn_api;

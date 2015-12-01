@@ -529,6 +529,9 @@ struct BtCursor {
   void *padding1;           /* Make object size a multiple of 16 */
   u16 aiIdx[BTCURSOR_MAX_DEPTH];        /* Current index in apPage[i] */
   MemPage *apPage[BTCURSOR_MAX_DEPTH];  /* Pages from root to current page */
+
+  u8 is_tarantool; /* Set not null, if it is cursor on tarantool space */
+  void *trntl_cursor; /* Pointer on object of TarantoolCursor */
 };
 
 /*

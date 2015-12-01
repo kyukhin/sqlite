@@ -1158,7 +1158,7 @@ static int resolveSelectStep(Walker *pWalker, Select *p){
       return WRC_Abort;
     }
 
-    /* If the SF_Converted flags is set, then this Select object was
+    /* If the SF_Converted flags is set, then this Select object
     ** was created by the convertCompoundSelectToSubquery() function.
     ** In this case the ORDER BY clause (p->pOrderBy) should be resolved
     ** as if it were part of the sub-query, not the parent. This block

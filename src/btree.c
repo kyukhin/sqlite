@@ -4100,6 +4100,7 @@ static int btreeCursor(
   pCur->pNext = pBt->pCursor;
   pBt->pCursor = pCur;
   pCur->eState = CURSOR_INVALID;
+  pCur->is_tarantool = 0;
   return SQLITE_OK;
 }
 int sqlite3BtreeCursor(
@@ -4110,12 +4111,23 @@ int sqlite3BtreeCursor(
   BtCursor *pCur                              /* Write new cursor here */
 ){
   int rc;
-  if( iTable<1 ){
+  int tmp = iTable;
+  if (iTable <= -280) {
+    tmp = -iTable;
+  }
+  if (iTable <= -10) pCur->is_tarantool = 1;
+
+  if( tmp<1 ){
     rc = SQLITE_CORRUPT_BKPT;
   }else{
-    sqlite3BtreeEnter(p);
-    rc = btreeCursor(p, iTable, wrFlag, pKeyInfo, pCur);
-    sqlite3BtreeLeave(p);
+    if (!pCur->is_tarantool) {
+      sqlite3BtreeEnter(p);
+      rc = btreeCursor(p, tmp, wrFlag, pKeyInfo, pCur);
+      sqlite3BtreeLeave(p);
+    } else {
+      sql_tarantool_api *trn_api = &p->db->trn_api;
+      rc = trn_api->trntl_cursor_create(trn_api->self, p, tmp, wrFlag, pKeyInfo, pCur);
+    }
   }
   return rc;
 }
@@ -4149,34 +4161,39 @@ void sqlite3BtreeCursorZero(BtCursor *p){
 ** when the last cursor is closed.
 */
 int sqlite3BtreeCloseCursor(BtCursor *pCur){
-  Btree *pBtree = pCur->pBtree;
-  if( pBtree ){
-    int i;
-    BtShared *pBt = pCur->pBt;
-    sqlite3BtreeEnter(pBtree);
-    sqlite3BtreeClearCursor(pCur);
-    assert( pBt->pCursor!=0 );
-    if( pBt->pCursor==pCur ){
-      pBt->pCursor = pCur->pNext;
-    }else{
-      BtCursor *pPrev = pBt->pCursor;
-      do{
-        if( pPrev->pNext==pCur ){
-          pPrev->pNext = pCur->pNext;
-          break;
-        }
-        pPrev = pPrev->pNext;
-      }while( ALWAYS(pPrev) );
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_close(trn_api->self, pCur);
+  } else {
+    Btree *pBtree = pCur->pBtree;
+    if( pBtree ){
+      int i;
+      BtShared *pBt = pCur->pBt;
+      sqlite3BtreeEnter(pBtree);
+      sqlite3BtreeClearCursor(pCur);
+      assert( pBt->pCursor!=0 );
+      if( pBt->pCursor==pCur ){
+        pBt->pCursor = pCur->pNext;
+      }else{
+        BtCursor *pPrev = pBt->pCursor;
+        do{
+          if( pPrev->pNext==pCur ){
+            pPrev->pNext = pCur->pNext;
+            break;
+          }
+          pPrev = pPrev->pNext;
+        }while( ALWAYS(pPrev) );
+      }
+      for(i=0; i<=pCur->iPage; i++){
+        releasePage(pCur->apPage[i]);
+      }
+      unlockBtreeIfUnused(pBt);
+      sqlite3_free(pCur->aOverflow);
+      /* sqlite3_free(pCur); */
+      sqlite3BtreeLeave(pBtree);
     }
-    for(i=0; i<=pCur->iPage; i++){
-      releasePage(pCur->apPage[i]);
-    }
-    unlockBtreeIfUnused(pBt);
-    sqlite3_free(pCur->aOverflow);
-    /* sqlite3_free(pCur); */
-    sqlite3BtreeLeave(pBtree);
+    return SQLITE_OK;
   }
-  return SQLITE_OK;
 }
 
 /*
@@ -4257,8 +4274,13 @@ int sqlite3BtreeDataSize(BtCursor *pCur, u32 *pSize){
   assert( pCur->iPage>=0 );
   assert( pCur->iPage<BTCURSOR_MAX_DEPTH );
   assert( pCur->apPage[pCur->iPage]->intKeyLeaf==1 );
-  getCellInfo(pCur);
-  *pSize = pCur->info.nPayload;
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    trn_api->trntl_cursor_data_size(trn_api->self, pCur, pSize);
+  } else {
+    getCellInfo(pCur);
+    *pSize = pCur->info.nPayload;
+  }
   return SQLITE_OK;
 }
 
@@ -4698,7 +4720,12 @@ const void *sqlite3BtreeKeyFetch(BtCursor *pCur, u32 *pAmt){
   return fetchPayload(pCur, pAmt);
 }
 const void *sqlite3BtreeDataFetch(BtCursor *pCur, u32 *pAmt){
-  return fetchPayload(pCur, pAmt);
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_data_fetch(trn_api->self, pCur, pAmt);
+  } else {
+    return fetchPayload(pCur, pAmt);
+  }
 }
 
 
@@ -4927,15 +4954,20 @@ int sqlite3BtreeFirst(BtCursor *pCur, int *pRes){
 
   assert( cursorHoldsMutex(pCur) );
   assert( sqlite3_mutex_held(pCur->pBtree->db->mutex) );
-  rc = moveToRoot(pCur);
-  if( rc==SQLITE_OK ){
-    if( pCur->eState==CURSOR_INVALID ){
-      assert( pCur->pgnoRoot==0 || pCur->apPage[pCur->iPage]->nCell==0 );
-      *pRes = 1;
-    }else{
-      assert( pCur->apPage[pCur->iPage]->nCell>0 );
-      *pRes = 0;
-      rc = moveToLeftmost(pCur);
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    rc = trn_api->trntl_cursor_first(trn_api->self, pCur, pRes);
+  } else {
+    rc = moveToRoot(pCur);
+    if( rc==SQLITE_OK ){
+      if( pCur->eState==CURSOR_INVALID ){
+        assert( pCur->pgnoRoot==0 || pCur->apPage[pCur->iPage]->nCell==0 );
+        *pRes = 1;
+      }else{
+        assert( pCur->apPage[pCur->iPage]->nCell>0 );
+        *pRes = 0;
+        rc = moveToLeftmost(pCur);
+      }
     }
   }
   return rc;
@@ -5335,24 +5367,29 @@ static SQLITE_NOINLINE int btreeNext(BtCursor *pCur, int *pRes){
   }
 }
 int sqlite3BtreeNext(BtCursor *pCur, int *pRes){
-  MemPage *pPage;
-  assert( cursorHoldsMutex(pCur) );
-  assert( pRes!=0 );
-  assert( *pRes==0 || *pRes==1 );
-  assert( pCur->skipNext==0 || pCur->eState!=CURSOR_VALID );
-  pCur->info.nSize = 0;
-  pCur->curFlags &= ~(BTCF_ValidNKey|BTCF_ValidOvfl);
-  *pRes = 0;
-  if( pCur->eState!=CURSOR_VALID ) return btreeNext(pCur, pRes);
-  pPage = pCur->apPage[pCur->iPage];
-  if( (++pCur->aiIdx[pCur->iPage])>=pPage->nCell ){
-    pCur->aiIdx[pCur->iPage]--;
-    return btreeNext(pCur, pRes);
-  }
-  if( pPage->leaf ){
-    return SQLITE_OK;
-  }else{
-    return moveToLeftmost(pCur);
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_next(trn_api->self, pCur, pRes);
+  } else {
+    MemPage *pPage;
+    assert( cursorHoldsMutex(pCur) );
+    assert( pRes!=0 );
+    assert( *pRes==0 || *pRes==1 );
+    assert( pCur->skipNext==0 || pCur->eState!=CURSOR_VALID );
+    pCur->info.nSize = 0;
+    pCur->curFlags &= ~(BTCF_ValidNKey|BTCF_ValidOvfl);
+    *pRes = 0;
+    if( pCur->eState!=CURSOR_VALID ) return btreeNext(pCur, pRes);
+    pPage = pCur->apPage[pCur->iPage];
+    if( (++pCur->aiIdx[pCur->iPage])>=pPage->nCell ){
+      pCur->aiIdx[pCur->iPage]--;
+      return btreeNext(pCur, pRes);
+    }
+    if( pPage->leaf ){
+      return SQLITE_OK;
+    }else{
+      return moveToLeftmost(pCur);
+    }
   }
 }
 
