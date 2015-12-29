@@ -4103,6 +4103,7 @@ static int btreeCursor(
   pCur->is_tarantool = 0;
   return SQLITE_OK;
 }
+
 int sqlite3BtreeCursor(
   Btree *p,                                   /* The btree */
   int iTable,                                 /* Root page of table to open */
@@ -4111,23 +4112,22 @@ int sqlite3BtreeCursor(
   BtCursor *pCur                              /* Write new cursor here */
 ){
   int rc;
-  int tmp = iTable;
-  if (iTable <= -280) {
-    tmp = -iTable;
-  }
-  if (iTable <= -10) pCur->is_tarantool = 1;
-
-  if( tmp<1 ){
+  u32 tmp;
+  sql_tarantool_api *trn_api = &p->db->trn_api;
+  memcpy(&tmp, &iTable, sizeof(u32));
+  if (trn_api->check_num_on_tarantool_id(trn_api->self, tmp)) {
+    pCur->is_tarantool = 1;
+  } else if (iTable < 1) {
     rc = SQLITE_CORRUPT_BKPT;
-  }else{
-    if (!pCur->is_tarantool) {
-      sqlite3BtreeEnter(p);
-      rc = btreeCursor(p, tmp, wrFlag, pKeyInfo, pCur);
-      sqlite3BtreeLeave(p);
-    } else {
-      sql_tarantool_api *trn_api = &p->db->trn_api;
-      rc = trn_api->trntl_cursor_create(trn_api->self, p, tmp, wrFlag, pKeyInfo, pCur);
-    }
+    return rc;
+  }
+
+  if (!pCur->is_tarantool) {
+    sqlite3BtreeEnter(p);
+    rc = btreeCursor(p, iTable, wrFlag, pKeyInfo, pCur);
+    sqlite3BtreeLeave(p);
+  } else {
+    rc = trn_api->trntl_cursor_create(trn_api->self, p, tmp, wrFlag, pKeyInfo, pCur);
   }
   return rc;
 }
@@ -4154,6 +4154,7 @@ int sqlite3BtreeCursorSize(void){
 */
 void sqlite3BtreeCursorZero(BtCursor *p){
   memset(p, 0, offsetof(BtCursor, iPage));
+  p->is_tarantool = 0;
 }
 
 /*
@@ -4251,8 +4252,13 @@ int sqlite3BtreeCursorIsValid(BtCursor *pCur){
 int sqlite3BtreeKeySize(BtCursor *pCur, i64 *pSize){
   assert( cursorHoldsMutex(pCur) );
   assert( pCur->eState==CURSOR_VALID );
-  getCellInfo(pCur);
-  *pSize = pCur->info.nKey;
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    trn_api->trntl_cursor_key_size(trn_api->self, pCur, pSize);
+  } else {
+    getCellInfo(pCur);
+    *pSize = pCur->info.nKey;
+  }
   return SQLITE_OK;
 }
 
@@ -4717,7 +4723,12 @@ static const void *fetchPayload(
 ** in the common case where no overflow pages are used.
 */
 const void *sqlite3BtreeKeyFetch(BtCursor *pCur, u32 *pAmt){
-  return fetchPayload(pCur, pAmt);
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_key_fetch(trn_api->self, pCur, pAmt);
+  } else {
+    return fetchPayload(pCur, pAmt);
+  }
 }
 const void *sqlite3BtreeDataFetch(BtCursor *pCur, u32 *pAmt){
   if (pCur->is_tarantool) {
@@ -5055,24 +5066,27 @@ int sqlite3BtreeMovetoUnpacked(
 ){
   int rc;
   RecordCompare xRecordCompare;
-
-  assert( cursorHoldsMutex(pCur) );
-  assert( sqlite3_mutex_held(pCur->pBtree->db->mutex) );
+  if (!pCur->is_tarantool) {
+    assert( cursorHoldsMutex(pCur) );
+    assert( sqlite3_mutex_held(pCur->pBtree->db->mutex) );
+  }
   assert( pRes );
   assert( (pIdxKey==0)==(pCur->pKeyInfo==0) );
 
-  /* If the cursor is already positioned at the point we are trying
-  ** to move to, then just return without doing any work */
-  if( pCur->eState==CURSOR_VALID && (pCur->curFlags & BTCF_ValidNKey)!=0
-   && pCur->curIntKey 
-  ){
-    if( pCur->info.nKey==intKey ){
-      *pRes = 0;
-      return SQLITE_OK;
-    }
-    if( (pCur->curFlags & BTCF_AtLast)!=0 && pCur->info.nKey<intKey ){
-      *pRes = -1;
-      return SQLITE_OK;
+  if (!pCur->is_tarantool) {
+    /* If the cursor is already positioned at the point we are trying
+    ** to move to, then just return without doing any work */
+    if( pCur->eState==CURSOR_VALID && (pCur->curFlags & BTCF_ValidNKey)!=0
+     && pCur->curIntKey 
+    ){
+      if( pCur->info.nKey==intKey ){
+        *pRes = 0;
+        return SQLITE_OK;
+      }
+      if( (pCur->curFlags & BTCF_AtLast)!=0 && pCur->info.nKey<intKey ){
+        *pRes = -1;
+        return SQLITE_OK;
+      }
     }
   }
 
@@ -5085,6 +5099,11 @@ int sqlite3BtreeMovetoUnpacked(
     );
   }else{
     xRecordCompare = 0; /* All keys are integers */
+  }
+
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_move_to_unpacked(trn_api->self, pCur, pIdxKey, intKey, biasRight, pRes, xRecordCompare);
   }
 
   rc = moveToRoot(pCur);

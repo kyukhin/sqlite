@@ -245,10 +245,15 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   
   //Tarantool: here we add new tables to db
   if (iDb == 0) {
-    Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema);
+    Hash idxHash;
+    Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema, &idxHash);
     for(HashElem *p = sqliteHashFirst(&tblHash); p; p = sqliteHashNext(p)){
       Table *data = sqliteHashData(p);
       sqlite3HashInsert(&(pDb->pSchema->tblHash), data->zName, data);
+    }
+    for (HashElem *p = sqliteHashFirst(&idxHash); p; p = sqliteHashNext(p)) {
+      SIndex *data = sqliteHashData(p);
+      sqlite3HashInsert(&(pDb->pSchema->idxHash), data->zName, data);
     }
   }
 

@@ -1137,7 +1137,7 @@ typedef struct sql_tarantool_api {
   void *self;                   /* Pointer to internal tarantool objects */
   /* Get Hash object with tarantool spaces */
   Hash (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg,
-                          Schema *pSchema);
+                          Schema *pSchema, Hash *idxHash_);
 /*
 ** For more function details look at sqlite3BtreeCursor...() functions
 */
@@ -1150,10 +1150,16 @@ typedef struct sql_tarantool_api {
   int (*trntl_cursor_data_size)(void *self, BtCursor *pCur, u32 *pSize);
   /* Get pointer to current tuple with header */
   const void *(*trntl_cursor_data_fetch)(void *self, BtCursor *pCur, u32 *pAmt);
+  int (*trntl_cursor_key_size)(void *self, BtCursor *pCur, i64 *pSize);
+  const void *(*trntl_cursor_key_fetch)(void *self, BtCursor *pCur, u32 *pAmt);
   /* Move cursor forward */
   int (*trntl_cursor_next)(void *self, BtCursor *pCur, int *pRes);
 
   int (*trntl_cursor_close)(void *self, BtCursor *pCur);
+
+  char (*check_num_on_tarantool_id)(void *self, u32 num);
+
+  int (*trntl_cursor_move_to_unpacked)(void *self, BtCursor *pCur, UnpackedRecord *pIdxKey, i64 intKey, int biasRight, int *pRes, RecordCompare xRecordCompare);
 } sql_tarantool_api;
 
 extern sql_tarantool_api global_trn_api;
@@ -1858,7 +1864,7 @@ struct KeyInfo {
 */
 struct UnpackedRecord {
   KeyInfo *pKeyInfo;  /* Collation and sort-order information */
-  u16 nField;         /* Number of entries in apMem[] */
+  u16 nField;         /* Number of entries in aMem[] */
   i8 default_rc;      /* Comparison result if keys are equal */
   u8 errCode;         /* Error detected by xRecordCompare (CORRUPT or NOMEM) */
   Mem *aMem;          /* Values */

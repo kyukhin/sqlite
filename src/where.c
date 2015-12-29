@@ -596,7 +596,7 @@ static void constructAutomaticIndex(
   int nKeyCol;                /* Number of columns in the constructed index */
   WhereTerm *pTerm;           /* A single term of the WHERE clause */
   WhereTerm *pWCEnd;          /* End of pWC->a[] */
-  SIndex *pIdx;                /* Object describing the transient index */
+  SIndex *pIdx;               /* Object describing the transient index */
   Vdbe *v;                    /* Prepared statement under construction */
   int addrInit;               /* Address of the initialization bypass jump */
   Table *pTable;              /* The table being indexed */
@@ -4093,7 +4093,7 @@ WhereInfo *sqlite3WhereBegin(
   **
   ** The N-th term of the FROM clause is assigned a bitmask of 1<<N.
   **
-  ** The rule of the previous sentence ensures thta if X is the bitmask for
+  ** The rule of the previous sentence ensures that if X is the bitmask for
   ** a table T, then X-1 is the bitmask for all other tables to the left of T.
   ** Knowing the bitmask for all tables to the left of a left join is
   ** important.  Ticket #3015.
