@@ -17,6 +17,49 @@
 
 #include "sqliteInt.h"
 
+/** 
+ * Constructor function for struct sql_result. Must be called
+ * before any actions with sql_result object.
+ *
+ * struct sql_result res;
+ * sql_result_init(&res);
+ * //......any actions with res
+ * sql_result_free(&res);
+ */
+void
+sql_result_init(struct sql_result *ob) {
+  ob->names = NULL;
+  ob->values = NULL;
+  ob->cols = 0;
+  ob->rows = 0;
+}
+
+/** 
+ * Destructor function for struct sql_result. Must be called
+ * after all actions with sql_result object.
+ *
+ * struct sql_result res;
+ * sql_result_init(&res);
+ * //......any actions with res
+ * sql_result_free(&res);
+ */
+void
+sql_result_free(struct sql_result *ob) {
+  if (ob->names != NULL) {
+    for (int i = 0; i < ob->cols; ++i) free(ob->names[i]);
+    free(ob->names);
+  }
+  if (ob->values != NULL) {
+    for (int i = 0; i < ob->rows; ++i) {
+      for (int j = 0; j < ob->cols; ++j) {
+        free(ob->values[i][j]);
+      }
+      free(ob->values[i]);
+    }
+    free(ob->values);
+  }
+}
+
 /*
 ** Execute SQL code.  Return one of the SQLITE_ success/failure
 ** codes.  Also write an error message into memory obtained from

@@ -1165,6 +1165,22 @@ typedef struct sql_tarantool_api {
 extern sql_tarantool_api global_trn_api;
 extern char global_trn_api_is_ready;
 
+/** Struct for containing data, received from sqlite database. */
+struct sql_result {
+  /** Array of names as strings */
+  char **names;
+  /** Two-dimensional array of column values as strings */
+  char ***values;
+  /** Number of columns and also size of names array */
+  int cols;
+  /** Number of rows in values array */
+  int rows;
+};
+
+void sql_result_init(struct sql_result *ob);
+
+void sql_result_free(struct sql_result *ob);
+
 /*
 ** Each database connection is an instance of the following structure.
 */
