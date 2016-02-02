@@ -1024,25 +1024,30 @@ fts5.lo:	fts5.c $(HDR) $(EXTHDR)
 	$(LTCOMPILE) -DSQLITE_CORE -c fts5.c
 
 
-# Rules to build the 'testfixture' application.
+# Rules to build the 'testfixture' shared library.
 #
 # If using the amalgamation, use sqlite3.c directly to build the test
 # fixture.  Otherwise link against libsqlite3.la.  (This distinction is
 # necessary because the test fixture requires non-API symbols which are
 # hidden when the library is built via the amalgamation).
 #
-TESTFIXTURE_FLAGS  = -DTCLSH=1 -DSQLITE_TEST=1 -DSQLITE_CRASH_TEST=1
-TESTFIXTURE_FLAGS += -DSQLITE_SERVER=1 -DSQLITE_PRIVATE="" -DSQLITE_CORE 
-TESTFIXTURE_FLAGS += -DBUILD_sqlite
+# Hotfix for Tcl tests
+# TODO: rewrite
+TESTFIXTURE_FLAGS = -DTCLSH=1 -DSQLITE_TEST=1
+TESTFIXTURE_FLAGS += -DSQLITE_PRIVATE="" -DSQLITE_CORE 
+#TESTFIXTURE_FLAGS += -DBUILD_sqlite
 
 TESTFIXTURE_SRC0 = $(TESTSRC2) libsqlite3.la
 TESTFIXTURE_SRC1 = sqlite3.c
 TESTFIXTURE_SRC = $(TESTSRC) $(TOP)/src/tclsqlite.c
-TESTFIXTURE_SRC += $(TESTFIXTURE_SRC$(USE_AMALGAMATION))
+#TESTFIXTURE_SRC += $(TESTFIXTURE_SRC$(USE_AMALGAMATION))
 
-testfixture$(TEXE):	$(TESTFIXTURE_SRC)
-	$(LTLINK) -DSQLITE_NO_SYNC=1 $(TEMP_STORE) $(TESTFIXTURE_FLAGS) \
-		-o $@ $(TESTFIXTURE_SRC) $(LIBTCL) $(TLIBS)
+testfixture$(TEXE): $(TESTFIXTURE_SRC)
+	gcc -I./ -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -fPIC -g \
+    -c $(TESTFIXTURE_SRC) $(LIBTCL) $(TLIBS)
+	gcc -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -undefined dynamic_lookup \
+    -shared -g -o testfixture.so *.o  $(LIBTCL) $(TLIBS) \
+	-F/System/Library/Frameworks -framework Tcl
 
 # A very detailed test running most or all test cases
 fulltest:	$(TESTPROGS) fuzztest
