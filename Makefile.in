@@ -1040,13 +1040,22 @@ TESTFIXTURE_FLAGS += -DSQLITE_PRIVATE="" -DSQLITE_CORE 
 TESTFIXTURE_SRC0 = $(TESTSRC2) libsqlite3.la
 TESTFIXTURE_SRC1 = sqlite3.c
 TESTFIXTURE_SRC = $(TESTSRC) $(TOP)/src/tclsqlite.c
-#TESTFIXTURE_SRC += $(TESTFIXTURE_SRC$(USE_AMALGAMATION))
+TESTFIXTURE_OBJECTS = amatch.o closure.o eval.o fileio.o \
+fts3_term.o fts3_test.o fts5_tcl.o fts5_test_mi.o fuzzer.o ieee754.o json1.o \
+nextchar.o percentile.o regexp.o series.o spellfix.o tclsqlite.o test1.o \
+test2.o test3.o test4.o test5.o test6.o test7.o test8.o test9.o test_async.o \
+test_autoext.o test_backup.o test_blob.o test_btree.o test_config.o \
+test_demovfs.o test_devsym.o test_fs.o test_func.o test_hexio.o test_init.o \
+test_intarray.o test_journal.o test_malloc.o test_multiplex.o test_mutex.o \
+test_onefile.o test_osinst.o test_pcache.o test_quota.o test_rbu.o \
+test_rtree.o test_schema.o test_server.o test_superlock.o test_syscall.o \
+test_tclvar.o test_thread.o test_vfs.o test_wsd.o totype.o wholenumber.o
 
 testfixture$(TEXE): $(TESTFIXTURE_SRC)
 	gcc -I./ -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -fPIC -g \
     -c $(TESTFIXTURE_SRC) $(LIBTCL) $(TLIBS)
 	gcc -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -undefined dynamic_lookup \
-    -shared -g -o testfixture.so *.o  $(LIBTCL) $(TLIBS) \
+    -shared -g -o testfixture.so $(TESTFIXTURE_OBJECTS)  $(LIBTCL) $(TLIBS) \
 	-F/System/Library/Frameworks -framework Tcl
 
 # A very detailed test running most or all test cases
