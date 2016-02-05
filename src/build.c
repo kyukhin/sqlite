@@ -784,8 +784,10 @@ int sqlite3TwoPartName(
       return -1;
     }
   }else{
-    assert( db->init.iDb==0 || db->init.busy );
-    iDb = db->init.iDb;
+    if (!pParse->is_trntl_init) {
+      assert( db->init.iDb==0 || db->init.busy );
+      iDb = db->init.iDb;
+    } else iDb = 0;
     *pUnqual = pName1;
   }
   return iDb;
@@ -799,6 +801,7 @@ int sqlite3TwoPartName(
 ** is reserved for internal use.
 */
 int sqlite3CheckObjectName(Parse *pParse, const char *zName){
+  if (pParse->is_trntl_init) return SQLITE_OK;
   if( !pParse->db->init.busy && pParse->nested==0 
           && (pParse->db->flags & SQLITE_WriteSchema)==0
           && 0==sqlite3StrNICmp(zName, "sqlite_", 7) ){
@@ -894,30 +897,32 @@ void sqlite3StartTable(
   if( SQLITE_OK!=sqlite3CheckObjectName(pParse, zName) ){
     goto begin_table_error;
   }
-  if( db->init.iDb==1 ) isTemp = 1;
+  if( (!pParse->is_trntl_init) && (db->init.iDb==1) ) isTemp = 1;
 #ifndef SQLITE_OMIT_AUTHORIZATION
-  assert( (isTemp & 1)==isTemp );
-  {
-    int code;
-    char *zDb = db->aDb[iDb].zName;
-    if( sqlite3AuthCheck(pParse, SQLITE_INSERT, SCHEMA_TABLE(isTemp), 0, zDb) ){
-      goto begin_table_error;
-    }
-    if( isView ){
-      if( !OMIT_TEMPDB && isTemp ){
-        code = SQLITE_CREATE_TEMP_VIEW;
-      }else{
-        code = SQLITE_CREATE_VIEW;
+  if (!pParse->is_trntl_init) {
+    assert( (isTemp & 1)==isTemp );
+    {
+      int code;
+      char *zDb = db->aDb[iDb].zName;
+      if( sqlite3AuthCheck(pParse, SQLITE_INSERT, SCHEMA_TABLE(isTemp), 0, zDb) ){
+        goto begin_table_error;
       }
-    }else{
-      if( !OMIT_TEMPDB && isTemp ){
-        code = SQLITE_CREATE_TEMP_TABLE;
+      if( isView ){
+        if( !OMIT_TEMPDB && isTemp ){
+          code = SQLITE_CREATE_TEMP_VIEW;
+        }else{
+          code = SQLITE_CREATE_VIEW;
+        }
       }else{
-        code = SQLITE_CREATE_TABLE;
+        if( !OMIT_TEMPDB && isTemp ){
+          code = SQLITE_CREATE_TEMP_TABLE;
+        }else{
+          code = SQLITE_CREATE_TABLE;
+        }
       }
-    }
-    if( !isVirtual && sqlite3AuthCheck(pParse, code, zName, 0, zDb) ){
-      goto begin_table_error;
+      if( !isVirtual && sqlite3AuthCheck(pParse, code, zName, 0, zDb) ){
+        goto begin_table_error;
+      }
     }
   }
 #endif
@@ -929,7 +934,7 @@ void sqlite3StartTable(
   ** and types will be used, so there is no need to test for namespace
   ** collisions.
   */
-  if( !IN_DECLARE_VTAB ){
+  if( (!IN_DECLARE_VTAB) && (!pParse->is_trntl_init)){
     char *zDb = db->aDb[iDb].zName;
     if( SQLITE_OK!=sqlite3ReadSchema(pParse) ){
       goto begin_table_error;
@@ -952,18 +957,20 @@ void sqlite3StartTable(
 
   pTable = sqlite3DbMallocZero(db, sizeof(Table));
   if( pTable==0 ){
-    db->mallocFailed = 1;
+    if (db) db->mallocFailed = 1;
     pParse->rc = SQLITE_NOMEM;
     pParse->nErr++;
     goto begin_table_error;
   }
   pTable->zName = zName;
   pTable->iPKey = -1;
-  pTable->pSchema = db->aDb[iDb].pSchema;
+  if (!pParse->is_trntl_init) pTable->pSchema = db->aDb[iDb].pSchema;
   pTable->nRef = 1;
   pTable->nRowLogEst = 200; assert( 200==sqlite3LogEst(1048576) );
   assert( pParse->pNewTable==0 );
   pParse->pNewTable = pTable;
+
+  if (pParse->is_trntl_init) return;
 
   /* If this is the magic sqlite_sequence table used by autoincrement,
   ** then record a pointer to this table in the main database structure
@@ -1078,10 +1085,11 @@ void sqlite3AddColumn(Parse *pParse, Token *pName){
   sqlite3 *db = pParse->db;
   if( (p = pParse->pNewTable)==0 ) return;
 #if SQLITE_MAX_COLUMN
-  if( p->nCol+1>db->aLimit[SQLITE_LIMIT_COLUMN] ){
-    sqlite3ErrorMsg(pParse, "too many columns on %s", p->zName);
-    return;
-  }
+  if (!pParse->is_trntl_init)
+    if( p->nCol+1>db->aLimit[SQLITE_LIMIT_COLUMN] ){
+      sqlite3ErrorMsg(pParse, "too many columns on %s", p->zName);
+      return;
+    }
 #endif
   z = sqlite3NameFromToken(db, pName);
   if( z==0 ) return;

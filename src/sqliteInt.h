@@ -1136,8 +1136,8 @@ void sqlite3CryptFunc(sqlite3_context*,int,sqlite3_value**);
 typedef struct sql_tarantool_api {
   void *self;                   /* Pointer to internal tarantool objects */
   /* Get Hash object with tarantool spaces */
-  Hash (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg,
-                          Schema *pSchema, Hash *idxHash_);
+  void (*get_trntl_spaces)(void *self, sqlite3 *db, char **pzErrMsg,
+                          Schema *pSchema, Hash *idxHash, Hash *tblHash);
 /*
 ** For more function details look at sqlite3BtreeCursor...() functions
 */
@@ -1160,6 +1160,8 @@ typedef struct sql_tarantool_api {
   char (*check_num_on_tarantool_id)(void *self, u32 num);
 
   int (*trntl_cursor_move_to_unpacked)(void *self, BtCursor *pCur, UnpackedRecord *pIdxKey, i64 intKey, int biasRight, int *pRes, RecordCompare xRecordCompare);
+
+  sqlite3 (*get_global_db)();
 } sql_tarantool_api;
 
 extern sql_tarantool_api global_trn_api;
@@ -2812,6 +2814,8 @@ struct Parse {
   Table *pZombieTab;        /* List of Table objects to delete after code gen */
   TriggerPrg *pTriggerPrg;  /* Linked list of coded triggers */
   With *pWith;              /* Current WITH clause, or NULL */
+
+  char is_trntl_init;
 };
 
 /*

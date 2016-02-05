@@ -134,29 +134,6 @@ int sqlite3InitCallback(void *pInit, int argc, char **argv, char **NotUsed){
 ** indicate success or failure.
 */
 
-// static int trntl_sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
-//   if (iDb == 1) {
-//     return sqlite3InitOne(db, iDb, pzErrMsg);
-//   }
-//   static const char master_schema[] = 
-//      "CREATE TABLE sqlite_master(\n"
-//      "  type text,\n"
-//      "  name text,\n"
-//      "  tbl_name text,\n"
-//      "  rootpage integer,\n"
-//      "  sql text\n"
-//      ")"
-//   ; 
-
-//   Table *pTab;
-//   Db *pDb;
-
-//   pDb = &db->aDb[iDb];
-
-//   Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema);
-//   return SQLITE_OK;
-// }
-
 static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   int rc;
   int i;
@@ -245,16 +222,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   
   //Tarantool: here we add new tables to db
   if (iDb == 0) {
-    Hash idxHash;
-    Hash tblHash = db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema, &idxHash);
-    for(HashElem *p = sqliteHashFirst(&tblHash); p; p = sqliteHashNext(p)){
-      Table *data = sqliteHashData(p);
-      sqlite3HashInsert(&(pDb->pSchema->tblHash), data->zName, data);
-    }
-    for (HashElem *p = sqliteHashFirst(&idxHash); p; p = sqliteHashNext(p)) {
-      SIndex *data = sqliteHashData(p);
-      sqlite3HashInsert(&(pDb->pSchema->idxHash), data->zName, data);
-    }
+    db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema, &(pDb->pSchema->idxHash), &(pDb->pSchema->tblHash));
   }
 
   /* If there is not already a read-only (or read-write) transaction opened
@@ -430,23 +398,6 @@ error_out:
 ** file was of zero-length, then the DB_Empty flag is also set.
 */
 
-// int trntl_sqlite3Init(sqlite3 *db, char **pzErrMsg){
-//   int i, rc;
-//   assert( db->init.busy==0 );
-//   rc = SQLITE_OK;
-//   db->init.busy = 1;
-//   ENC(db) = SCHEMA_ENC(db);
-//   for(i=0; rc==SQLITE_OK && i<db->nDb; i++){
-//     if( DbHasProperty(db, i, DB_SchemaLoaded) || i==1 ) continue;
-//     rc = trntl_sqlite3InitOne(db, i, pzErrMsg);
-//     if( rc ){
-//       sqlite3ResetOneSchema(db, i);
-//     }
-//   }
-//   db->init.busy = 0;
-//   return rc;
-// }
-
 int sqlite3Init(sqlite3 *db, char **pzErrMsg){
   int i, rc;
   int commit_internal = !(db->flags&SQLITE_InternChanges);
@@ -495,7 +446,7 @@ int sqlite3ReadSchema(Parse *pParse){
   int rc = SQLITE_OK;
   sqlite3 *db = pParse->db;
   assert( sqlite3_mutex_held(db->mutex) );
-  if( !db->init.busy ){
+  if( (!db->init.busy) && (!pParse->is_trntl_init) ){
     rc = sqlite3Init(db, &pParse->zErrMsg);
   }
   if( rc!=SQLITE_OK ){
