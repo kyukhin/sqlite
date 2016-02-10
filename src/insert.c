@@ -1659,6 +1659,10 @@ int sqlite3OpenTableAndIndices(
   int iDataCur;
   SIndex *pIdx;
   Vdbe *v;
+  sql_tarantool_api *trn_api = &pParse->db->trn_api;
+  char trn_pass_all = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum)\
+    && (op == OP_OpenWrite);
+  int indices_num = 0;
 
   assert( op==OP_OpenRead || op==OP_OpenWrite );
   if( IsVirtual(pTab) ){
@@ -1680,11 +1684,15 @@ int sqlite3OpenTableAndIndices(
   }
   if( piIdxCur ) *piIdxCur = iBase;
   for(i=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, i++){
-    int iIdxCur = iBase++;
+    int iIdxCur = iBase;
     assert( pIdx->pSchema==pTab->pSchema );
     if( IsPrimaryKeyIndex(pIdx) && !HasRowid(pTab) && piDataCur ){
       *piDataCur = iIdxCur;
+    } else if (trn_pass_all) {
+      continue;
     }
+    indices_num++;
+    iBase++;
     if( aToOpen==0 || aToOpen[i+1] ){
       sqlite3VdbeAddOp3(v, op, iIdxCur, pIdx->tnum, iDb);
       sqlite3VdbeSetP4KeyInfo(pParse, pIdx);
@@ -1692,7 +1700,7 @@ int sqlite3OpenTableAndIndices(
     }
   }
   if( iBase>pParse->nTab ) pParse->nTab = iBase;
-  return i;
+  return indices_num;
 }
 
 
