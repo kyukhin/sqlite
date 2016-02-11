@@ -7969,6 +7969,7 @@ int sqlite3BtreeInsert(
   BtShared *pBt = p->pBt;
   unsigned char *oldCell;
   unsigned char *newCell = 0;
+  sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
 
   if( pCur->eState==CURSOR_FAULT ){
     assert( pCur->skipNext!=SQLITE_OK );
@@ -7988,115 +7989,123 @@ int sqlite3BtreeInsert(
   ** blob of associated data.  */
   assert( (pKey==0)==(pCur->pKeyInfo==0) );
 
-  /* Save the positions of any other cursors open on this table.
-  **
-  ** In some cases, the call to btreeMoveto() below is a no-op. For
-  ** example, when inserting data into a table with auto-generated integer
-  ** keys, the VDBE layer invokes sqlite3BtreeLast() to figure out the 
-  ** integer key to use. It then calls this function to actually insert the 
-  ** data into the intkey B-Tree. In this case btreeMoveto() recognizes
-  ** that the cursor is already where it needs to be and returns without
-  ** doing any work. To avoid thwarting these optimizations, it is important
-  ** not to clear the cursor here.
-  */
-  if( pCur->curFlags & BTCF_Multiple ){
-    rc = saveAllCursors(pBt, pCur->pgnoRoot, pCur);
-    if( rc ) return rc;
-  }
-
-  if( pCur->pKeyInfo==0 ){
-    assert( pKey==0 );
-    /* If this is an insert into a table b-tree, invalidate any incrblob 
-    ** cursors open on the row being replaced */
-    invalidateIncrblobCursors(p, nKey, 0);
-
-    /* If the cursor is currently on the last row and we are appending a
-    ** new row onto the end, set the "loc" to avoid an unnecessary
-    ** btreeMoveto() call */
-    if( (pCur->curFlags&BTCF_ValidNKey)!=0 && nKey>0
-      && pCur->info.nKey==nKey-1 ){
-       loc = -1;
-    }else if( loc==0 ){
-      rc = sqlite3BtreeMovetoUnpacked(pCur, 0, nKey, appendBias, &loc);
+  if (!pCur->is_tarantool) {
+    /* Save the positions of any other cursors open on this table.
+    **
+    ** In some cases, the call to btreeMoveto() below is a no-op. For
+    ** example, when inserting data into a table with auto-generated integer
+    ** keys, the VDBE layer invokes sqlite3BtreeLast() to figure out the 
+    ** integer key to use. It then calls this function to actually insert the 
+    ** data into the intkey B-Tree. In this case btreeMoveto() recognizes
+    ** that the cursor is already where it needs to be and returns without
+    ** doing any work. To avoid thwarting these optimizations, it is important
+    ** not to clear the cursor here.
+    */
+    if( pCur->curFlags & BTCF_Multiple ){
+      rc = saveAllCursors(pBt, pCur->pgnoRoot, pCur);
       if( rc ) return rc;
     }
-  }else if( loc==0 ){
-    rc = btreeMoveto(pCur, pKey, nKey, appendBias, &loc);
-    if( rc ) return rc;
-  }
-  assert( pCur->eState==CURSOR_VALID || (pCur->eState==CURSOR_INVALID && loc) );
 
-  pPage = pCur->apPage[pCur->iPage];
-  assert( pPage->intKey || nKey>=0 );
-  assert( pPage->leaf || !pPage->intKey );
+    if( pCur->pKeyInfo==0 ){
+      assert( pKey==0 );
+      /* If this is an insert into a table b-tree, invalidate any incrblob 
+      ** cursors open on the row being replaced */
+      invalidateIncrblobCursors(p, nKey, 0);
+
+      /* If the cursor is currently on the last row and we are appending a
+      ** new row onto the end, set the "loc" to avoid an unnecessary
+      ** btreeMoveto() call */
+      if( (pCur->curFlags&BTCF_ValidNKey)!=0 && nKey>0
+        && pCur->info.nKey==nKey-1 ){
+         loc = -1;
+      }else if( loc==0 ){
+        rc = sqlite3BtreeMovetoUnpacked(pCur, 0, nKey, appendBias, &loc);
+        if( rc ) return rc;
+      }
+    }else if( loc==0 ){
+      rc = btreeMoveto(pCur, pKey, nKey, appendBias, &loc);
+      if( rc ) return rc;
+    }
+    assert( pCur->eState==CURSOR_VALID || (pCur->eState==CURSOR_INVALID && loc) );
+
+    pPage = pCur->apPage[pCur->iPage];
+    assert( pPage->intKey || nKey>=0 );
+    assert( pPage->leaf || !pPage->intKey );
+  }
 
   TRACE(("INSERT: table=%d nkey=%lld ndata=%d page=%d %s\n",
           pCur->pgnoRoot, nKey, nData, pPage->pgno,
           loc==0 ? "overwrite" : "new entry"));
-  assert( pPage->isInit );
-  newCell = pBt->pTmpSpace;
-  assert( newCell!=0 );
-  rc = fillInCell(pPage, newCell, pKey, nKey, pData, nData, nZero, &szNew);
-  if( rc ) goto end_insert;
-  assert( szNew==pPage->xCellSize(pPage, newCell) );
-  assert( szNew <= MX_CELL_SIZE(pBt) );
-  idx = pCur->aiIdx[pCur->iPage];
-  if( loc==0 ){
-    u16 szOld;
-    assert( idx<pPage->nCell );
-    rc = sqlite3PagerWrite(pPage->pDbPage);
-    if( rc ){
-      goto end_insert;
-    }
-    oldCell = findCell(pPage, idx);
-    if( !pPage->leaf ){
-      memcpy(newCell, oldCell, 4);
-    }
-    rc = clearCell(pPage, oldCell, &szOld);
-    dropCell(pPage, idx, szOld, &rc);
+  if (!pCur->is_tarantool) {
+    assert( pPage->isInit );
+    newCell = pBt->pTmpSpace;
+    assert( newCell!=0 );
+    rc = fillInCell(pPage, newCell, pKey, nKey, pData, nData, nZero, &szNew);
     if( rc ) goto end_insert;
-  }else if( loc<0 && pPage->nCell>0 ){
-    assert( pPage->leaf );
-    idx = ++pCur->aiIdx[pCur->iPage];
-  }else{
-    assert( pPage->leaf );
-  }
-  insertCell(pPage, idx, newCell, szNew, 0, 0, &rc);
-  assert( rc!=SQLITE_OK || pPage->nCell>0 || pPage->nOverflow>0 );
+    assert( szNew==pPage->xCellSize(pPage, newCell) );
+    assert( szNew <= MX_CELL_SIZE(pBt) );
+    idx = pCur->aiIdx[pCur->iPage];
+    if( loc==0 ){
+      u16 szOld;
+      assert( idx<pPage->nCell );
+      rc = sqlite3PagerWrite(pPage->pDbPage);
+      if( rc ){
+        goto end_insert;
+      }
+      oldCell = findCell(pPage, idx);
+      if( !pPage->leaf ){
+        memcpy(newCell, oldCell, 4);
+      }
+      rc = clearCell(pPage, oldCell, &szOld);
+      dropCell(pPage, idx, szOld, &rc);
+      if( rc ) goto end_insert;
+    }else if( loc<0 && pPage->nCell>0 ){
+      assert( pPage->leaf );
+      idx = ++pCur->aiIdx[pCur->iPage];
+    }else{
+      assert( pPage->leaf );
+    }
+    insertCell(pPage, idx, newCell, szNew, 0, 0, &rc);
+    assert( rc!=SQLITE_OK || pPage->nCell>0 || pPage->nOverflow>0 );
 
-  /* If no error has occurred and pPage has an overflow cell, call balance() 
-  ** to redistribute the cells within the tree. Since balance() may move
-  ** the cursor, zero the BtCursor.info.nSize and BTCF_ValidNKey
-  ** variables.
-  **
-  ** Previous versions of SQLite called moveToRoot() to move the cursor
-  ** back to the root page as balance() used to invalidate the contents
-  ** of BtCursor.apPage[] and BtCursor.aiIdx[]. Instead of doing that,
-  ** set the cursor state to "invalid". This makes common insert operations
-  ** slightly faster.
-  **
-  ** There is a subtle but important optimization here too. When inserting
-  ** multiple records into an intkey b-tree using a single cursor (as can
-  ** happen while processing an "INSERT INTO ... SELECT" statement), it
-  ** is advantageous to leave the cursor pointing to the last entry in
-  ** the b-tree if possible. If the cursor is left pointing to the last
-  ** entry in the table, and the next row inserted has an integer key
-  ** larger than the largest existing key, it is possible to insert the
-  ** row without seeking the cursor. This can be a big performance boost.
-  */
-  pCur->info.nSize = 0;
-  if( rc==SQLITE_OK && pPage->nOverflow ){
-    pCur->curFlags &= ~(BTCF_ValidNKey);
-    rc = balance(pCur);
+    /* If no error has occurred and pPage has an overflow cell, call balance() 
+    ** to redistribute the cells within the tree. Since balance() may move
+    ** the cursor, zero the BtCursor.info.nSize and BTCF_ValidNKey
+    ** variables.
+    **
+    ** Previous versions of SQLite called moveToRoot() to move the cursor
+    ** back to the root page as balance() used to invalidate the contents
+    ** of BtCursor.apPage[] and BtCursor.aiIdx[]. Instead of doing that,
+    ** set the cursor state to "invalid". This makes common insert operations
+    ** slightly faster.
+    **
+    ** There is a subtle but important optimization here too. When inserting
+    ** multiple records into an intkey b-tree using a single cursor (as can
+    ** happen while processing an "INSERT INTO ... SELECT" statement), it
+    ** is advantageous to leave the cursor pointing to the last entry in
+    ** the b-tree if possible. If the cursor is left pointing to the last
+    ** entry in the table, and the next row inserted has an integer key
+    ** larger than the largest existing key, it is possible to insert the
+    ** row without seeking the cursor. This can be a big performance boost.
+    */
+    pCur->info.nSize = 0;
+    if( rc==SQLITE_OK && pPage->nOverflow ){
+      pCur->curFlags &= ~(BTCF_ValidNKey);
+      rc = balance(pCur);
 
-    /* Must make sure nOverflow is reset to zero even if the balance()
-    ** fails. Internal data structure corruption will result otherwise. 
-    ** Also, set the cursor state to invalid. This stops saveCursorPosition()
-    ** from trying to save the current position of the cursor.  */
-    pCur->apPage[pCur->iPage]->nOverflow = 0;
-    pCur->eState = CURSOR_INVALID;
+      /* Must make sure nOverflow is reset to zero even if the balance()
+      ** fails. Internal data structure corruption will result otherwise. 
+      ** Also, set the cursor state to invalid. This stops saveCursorPosition()
+      ** from trying to save the current position of the cursor.  */
+      pCur->apPage[pCur->iPage]->nOverflow = 0;
+      pCur->eState = CURSOR_INVALID;
+    }
+    assert( pCur->apPage[pCur->iPage]->nOverflow==0 );
+  } else {
+    //Insert to tarantool
+    rc = trn_api->trntl_cursor_insert(trn_api->self, pCur, pKey, nKey, pData, nData,
+      nZero, appendBias, seekResult);
   }
-  assert( pCur->apPage[pCur->iPage]->nOverflow==0 );
 
 end_insert:
   return rc;

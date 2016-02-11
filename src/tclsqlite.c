@@ -3849,30 +3849,10 @@ extern void prepare_to_open_db();
 
 #define TCLSH_MAIN main   /* Needed to fake out mktclapp */
 int TCLSH_MAIN(int argc, char **argv){
-  fprintf(stdout, "I HATE TCLLLLLL!!!!!!!!!!-----------\n");
   Tcl_Interp *interp;
 
   struct sqlite3 *db = NULL;
-  //int rc = make_connect_sqlite_db("tcltestdb.db", &db);
   prepare_to_open_db();
-  //int rc = sqlite3_open("tcltestdb.db", &db);
-  // if (rc != SQLITE_OK) {
-  //   fprintf(stdout, "Error while opening sqlite db\n");
-  //   return 0;
-  // }
-  //fprintf(stdout, "Db is opened\n");
-  // struct sql_result res;
-  // sql_result_init(&res);
-  // char *errMsg = NULL;
-  // rc = sqlite3_exec(db, "SELECT * from sqlite_master;", sql_callback, (void *)&res, &errMsg);
-  // if (rc != SQLITE_OK) {
-  //   if (errMsg)
-  //     fprintf(stdout, "Error while executing select: %s\n", errMsg);
-  //   else fprintf(stdout, "Error while executing select;\n");
-  //   return 0;
-  // }
-  // fprintf(stdout, "Select ok\n");
-  // return 0;
 
 #if !defined(_WIN32_WCE)
   if( getenv("BREAK") ){
