@@ -1166,6 +1166,8 @@ typedef struct sql_tarantool_api {
   int (*trntl_cursor_move_to_unpacked)(void *self, BtCursor *pCur, UnpackedRecord *pIdxKey, i64 intKey, int biasRight, int *pRes, RecordCompare xRecordCompare);
 
   sqlite3 (*get_global_db)();
+
+  void (*log_debug)(const char *msg);
 } sql_tarantool_api;
 
 extern sql_tarantool_api global_trn_api;

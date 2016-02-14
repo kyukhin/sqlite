@@ -562,6 +562,7 @@ int sqlite3VdbeExec(
 #ifdef VDBE_PROFILE
   u64 start;                 /* CPU clock count at start of opcode */
 #endif
+  sql_tarantool_api *trn_api = &db->trn_api;
   /*** INSERT STACK UNION HERE ***/
 
   assert( p->magic==VDBE_MAGIC_RUN );  /* sqlite3_step() verifies this */
@@ -684,7 +685,6 @@ int sqlite3VdbeExec(
 #if defined(SQLITE_DEBUG) || defined(VDBE_PROFILE)
     pOrigOp = pOp;
 #endif
-  
     switch( pOp->opcode ){
 
 /*****************************************************************************
