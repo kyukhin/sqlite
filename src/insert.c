@@ -498,6 +498,7 @@ void sqlite3Insert(
   if( pParse->nErr || db->mallocFailed ){
     goto insert_cleanup;
   }
+  sql_tarantool_api *trn_api = &db->trn_api;
 
   /* If the Select object is really just a simple VALUES() list with a
   ** single row (the common case) then keep that one row of values
@@ -977,7 +978,7 @@ void sqlite3Insert(
       );
       sqlite3FkCheck(pParse, pTab, 0, regIns, 0, 0);
       sqlite3CompleteInsertion(pParse, pTab, iDataCur, iIdxCur,
-                               regIns, aRegIdx, 0, appendFlag, isReplace==0);
+                             regIns, aRegIdx, 0, appendFlag, isReplace==0);
     }
   }
 
@@ -1174,6 +1175,8 @@ void sqlite3GenerateConstraintChecks(
   assert( v!=0 );
   assert( pTab->pSelect==0 );  /* This table is not a VIEW */
   nCol = pTab->nCol;
+  sql_tarantool_api *trn_api = &db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum);
   
   /* pPk is the PRIMARY KEY index for WITHOUT ROWID tables and NULL for
   ** normal rowid tables.  nPkField is the number of key fields in the 
@@ -1379,6 +1382,9 @@ void sqlite3GenerateConstraintChecks(
   ** WITHOUT ROWID table.
   */
   for(ix=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, ix++){
+    if (is_tarantool && (!IsPrimaryKeyIndex(pIdx))) {
+      continue;
+    } else if (is_tarantool) ix = 0;
     int regIdx;          /* Range of registers hold conent for pIdx */
     int regR;            /* Range of registers holding conflicting PK */
     int iThisCur;        /* Cursor for this UNIQUE index */
@@ -1581,9 +1587,15 @@ void sqlite3CompleteInsertion(
   u8 bAffinityDone = 0; /* True if OP_Affinity has been run already */
 
   v = sqlite3GetVdbe(pParse);
+  sql_tarantool_api *trn_api = &v->db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum);
   assert( v!=0 );
   assert( pTab->pSelect==0 );  /* This table is not a VIEW */
   for(i=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, i++){
+    if (is_tarantool) {
+      if (!IsPrimaryKeyIndex(pIdx)) continue;
+      i = 0;
+    }
     if( aRegIdx[i]==0 ) continue;
     bAffinityDone = 1;
     if( pIdx->pPartIdxWhere ){
