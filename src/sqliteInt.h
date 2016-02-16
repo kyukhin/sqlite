@@ -1159,6 +1159,8 @@ typedef struct sql_tarantool_api {
     i64 nKey, const void *pData, int nData, int nZero, int appendBias,
     int seekResult);
 
+  int (*trntl_cursor_delete_current)(void *self, BtCursor *pCur, int bPreserve);
+
   int (*trntl_cursor_close)(void *self, BtCursor *pCur);
 
   char (*check_num_on_tarantool_id)(void *self, u32 num);
