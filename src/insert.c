@@ -1384,7 +1384,7 @@ void sqlite3GenerateConstraintChecks(
   for(ix=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, ix++){
     if( is_tarantool && IsPrimaryKeyIndex(pIdx) && !isUpdate ){
       ix = 0;
-    } else if( is_tarantool && ix!=iDataCur-iIdxCur && isUpdate){
+    } else if( is_tarantool && (ix!=iDataCur-iIdxCur || !isUpdate) ){
       continue;
     }
     int regIdx;          /* Range of registers hold conent for pIdx */
@@ -1598,7 +1598,7 @@ void sqlite3CompleteInsertion(
       if (!IsPrimaryKeyIndex(pIdx)) continue;
       i = 0;
     }
-    else if( is_tarantool && isUpdate && iDataCur - iIdxCur != i ) {
+    else if( is_tarantool && (!isUpdate || iDataCur-iIdxCur!=i) ) {
       continue;
     }
     if( aRegIdx[i]==0 ) continue;
@@ -1670,11 +1670,12 @@ int sqlite3OpenTableAndIndices(
   u8 *aToOpen,     /* If not NULL: boolean for each table and index */
   int *piDataCur,  /* Write the database source cursor number here */
   int *piIdxCur,   /* Write the first index cursor number here */
-  int iDataCur     /* Actual data index in case of tarantool space*/
+  int iDataCur     /* Actual data index in case of tarantool space update -1 otherwise*/
 ){
   int i;
   int iDb;
   int iIdxCur;
+  int isUpdate = (iDataCur >= 0);
   SIndex *pIdx;
   Vdbe *v;
   sql_tarantool_api *trn_api = &pParse->db->trn_api;
@@ -1705,8 +1706,9 @@ int sqlite3OpenTableAndIndices(
   for(i=0, iIdxCur=iBase, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, i++, iIdxCur++){
     assert( pIdx->pSchema==pTab->pSchema );
     if( IsPrimaryKeyIndex(pIdx) && !HasRowid(pTab) && piDataCur ){
-      *piDataCur = iIdxCur;
-    } else if ( trn_pass_all && !piDataCur && iIdxCur!=iDataCur ) {
+      *piDataCur = iBase;
+      iIdxCur = iBase;
+    } else if ( trn_pass_all && (!isUpdate || iIdxCur!=iDataCur) ) {
       continue;
     }
     indices_num++;
