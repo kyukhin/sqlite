@@ -408,6 +408,7 @@ void sqlite3DeleteFrom(
     **  ONEPASS_SINGLE: One-pass approach - at most one row deleted.
     **  ONEPASS_MULTI:  One-pass approach - any number of rows may be deleted.
     */
+
     pWInfo = sqlite3WhereBegin(pParse, pTabList, pWhere, 0, 0, wcf, iTabCur+1);
     if( pWInfo==0 ) goto delete_from_cleanup;
     eOnePass = sqlite3WhereOkOnePass(pWInfo, aiCurOnePass);
@@ -483,7 +484,7 @@ void sqlite3DeleteFrom(
       }
       testcase( IsVirtual(pTab) );
       sqlite3OpenTableAndIndices(pParse, pTab, OP_OpenWrite, iTabCur, aToOpen,
-                                 &iDataCur, &iIdxCur, -1);
+                                 &iDataCur, &iIdxCur, -1, 1);
       assert( pPk || IsVirtual(pTab) || iDataCur==iTabCur );
       assert( pPk || IsVirtual(pTab) || iIdxCur==iDataCur+1 );
       if( eOnePass==ONEPASS_MULTI ) sqlite3VdbeJumpHere(v, iAddrOnce);
@@ -645,6 +646,8 @@ void sqlite3GenerateRowDelete(
   int iOld = 0;                   /* First register in OLD.* array */
   int iLabel;                     /* Label resolved to end of generated code */
   u8 opSeek;                      /* Seek opcode */
+  sql_tarantool_api *trn_api = &pParse->db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum);
 
   /* Vdbe is guaranteed to have been allocated by this stage. */
   assert( v );
@@ -716,12 +719,16 @@ void sqlite3GenerateRowDelete(
   ** a view (in which case the only effect of the DELETE statement is to
   ** fire the INSTEAD OF triggers).  */ 
   if( pTab->pSelect==0 ){
-    sqlite3GenerateRowIndexDelete(pParse, pTab, iDataCur, iIdxCur,0,iIdxNoSeek);
+    if (!is_tarantool) {
+      /* we need not to delete from non primary index in case of tarantool space*/
+      sqlite3GenerateRowIndexDelete(pParse, pTab, iDataCur, iIdxCur,0,iIdxNoSeek);
+    }
     sqlite3VdbeAddOp2(v, OP_Delete, iDataCur, (count?OPFLAG_NCHANGE:0));
     if( count ){
       sqlite3VdbeChangeP4(v, -1, pTab->zName, P4_TRANSIENT);
     }
-    if( iIdxNoSeek>=0 ){
+    if( iIdxNoSeek>=0 && !is_tarantool){
+      /* we need not to delete from non primary index in case of tarantool space*/
       sqlite3VdbeAddOp1(v, OP_Delete, iIdxNoSeek);
     }
     sqlite3VdbeChangeP5(v, eMode==ONEPASS_MULTI);

@@ -449,7 +449,7 @@ void sqlite3Update(
       if( aiCurOnePass[1]>=0 ) aToOpen[aiCurOnePass[1]-iBaseCur] = 0;
     }
     sqlite3OpenTableAndIndices(pParse, pTab, OP_OpenWrite, iBaseCur, aToOpen,
-                               0, 0, iDataCur);
+                               0, 0, iDataCur, 1);
   }
 
   /* Top of the update loop */
