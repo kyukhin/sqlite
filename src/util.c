@@ -21,6 +21,108 @@
 # include <math.h>
 #endif
 
+Column *make_deep_copy_Column(const Column *ob, sqlite3 *db);
+
+SIndex *make_deep_copy_SIndex(const SIndex *src, sqlite3 *db) {
+  int nKeyCol = src->nKeyCol;
+  int nColumn = src->nColumn;
+  int nExtra = strlen(src->zName) + 1;
+  char *pExtra = NULL;
+  int buf;
+  SIndex *res = sqlite3AllocateIndexObject(db, src->nColumn, nExtra, &pExtra);
+  if (db->mallocFailed) {
+    return NULL;
+  }
+  res->zName = pExtra;
+  memcpy(res->zName, src->zName, nExtra - 1);
+  res->zName[nExtra - 1] = 0;
+  memcpy(res->aiColumn, src->aiColumn, sizeof(i16) * nKeyCol);
+  memcpy(res->aiRowLogEst, src->aiRowLogEst, sizeof(LogEst) * nKeyCol);
+  res->pTable = src->pTable;
+  if (src->zColAff) {
+    buf = strlen(src->zColAff);
+    memcpy(res->zColAff, src->zColAff, buf);
+    res->zColAff[buf] = 0;
+  }
+  res->pNext = src->pNext;
+  res->pSchema = src->pSchema;
+  res->aSortOrder[0] = src->aSortOrder[0];
+  for (int i = 0; i < nColumn; ++i) {
+    res->azColl[i] = sqlite3DbStrDup(db, src->azColl[i]);
+  }
+  res->tnum = src->tnum;
+  res->szIdxRow = src->szIdxRow;
+  res->nKeyCol = nKeyCol;
+  res->nColumn = nColumn;
+  res->onError = src->onError;
+  res->idxType = src->idxType;
+  res->bUnordered = src->bUnordered;
+  res->uniqNotNull = src->uniqNotNull;
+  res->isResized = src->isResized;
+  res->isCovering = src->isCovering;
+  res->noSkipScan = src->noSkipScan;
+  return res;
+}
+
+Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
+  Parse p;
+  memset(&p, 0, sizeof(p));
+  p.is_trntl_init = 1;
+  Token name1, name2;
+  memset(&name1, 0, sizeof(name1));
+  memset(&name2, 0, sizeof(name2));
+  name1.z = src->zName;
+  name1.n = strlen(src->zName);
+  sqlite3StartTable(&p, &name1, &name2, 0, 0, 0, 1);
+  if (p.nErr > 0) {
+    return NULL;
+  }
+  Table *res = p.pNewTable;
+  res->tnum = src->tnum;
+  res->pSchema = src->pSchema;
+  res->iPKey = src->iPKey;
+  res->tabFlags = src->tabFlags;
+  res->nRowLogEst = src->nRowLogEst;
+  res->szTabRow = src->szTabRow;
+  res->nCol = src->nCol;
+  res->aCol = (Column *)sqlite3DbMallocZero(db, sizeof(Column) * res->nCol);
+  if (db->mallocFailed) {
+    sqlite3_free(res);
+    return NULL;
+  }
+  for (int i = 0; i < res->nCol; ++i) {
+    Column *copy = make_deep_copy_Column((const Column *)(&src->aCol[i]), db);
+    if (!copy) {
+      sqlite3DbFree(db, res->aCol);
+      sqlite3_free(res);
+      return NULL;
+    }
+    res->aCol[i] = *copy;
+    sqlite3DbFree(db, copy);
+  }
+  return res;
+}
+
+Column *make_deep_copy_Column(const Column *ob, sqlite3 *db) {
+  Column *res = sqlite3DbMallocZero(db, sizeof(Column));
+  if (db->mallocFailed) {
+    return NULL;
+  }
+  res->zName = sqlite3DbStrDup(db, ob->zName);
+  if (db->mallocFailed) {
+    sqlite3DbFree(db, res);
+    return NULL;
+  }
+  res->zType = sqlite3DbStrDup(db, ob->zType);
+  if (db->mallocFailed) {
+    sqlite3DbFree(db, res->zName);
+    sqlite3_free(res);
+    return NULL;
+  }
+  res->affinity = ob->affinity;
+  return res;
+}
+
 /*
 ** Routine needed to support the testcase() macro.
 */

@@ -208,6 +208,15 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   pTab = sqlite3FindTable(db, zMasterName, db->aDb[iDb].zName);
   if( ALWAYS(pTab) ){
     pTab->tabFlags |= TF_Readonly;
+    if (iDb == 0) {
+      //insert this table to tarantool
+      sql_tarantool_api *trn_api = &db->trn_api;
+      trn_api->set_global_db(db);
+      rc = trn_api->init_schema_with_table(trn_api->self, pTab);
+      if (rc != SQLITE_OK) {
+        goto error_out;
+      }
+    }
   }
 
   /* Create a cursor to hold the database open

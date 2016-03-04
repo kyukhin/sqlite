@@ -4993,37 +4993,41 @@ int sqlite3BtreeLast(BtCursor *pCur, int *pRes){
  
   assert( cursorHoldsMutex(pCur) );
   assert( sqlite3_mutex_held(pCur->pBtree->db->mutex) );
-
-  /* If the cursor already points to the last entry, this is a no-op. */
-  if( CURSOR_VALID==pCur->eState && (pCur->curFlags & BTCF_AtLast)!=0 ){
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    rc = trn_api->trntl_cursor_last(trn_api->self, pCur, pRes);
+  } else {
+    /* If the cursor already points to the last entry, this is a no-op. */
+    if( CURSOR_VALID==pCur->eState && (pCur->curFlags & BTCF_AtLast)!=0 ){
 #ifdef SQLITE_DEBUG
-    /* This block serves to assert() that the cursor really does point 
-    ** to the last entry in the b-tree. */
-    int ii;
-    for(ii=0; ii<pCur->iPage; ii++){
-      assert( pCur->aiIdx[ii]==pCur->apPage[ii]->nCell );
-    }
-    assert( pCur->aiIdx[pCur->iPage]==pCur->apPage[pCur->iPage]->nCell-1 );
-    assert( pCur->apPage[pCur->iPage]->leaf );
-#endif
-    return SQLITE_OK;
-  }
-
-  rc = moveToRoot(pCur);
-  if( rc==SQLITE_OK ){
-    if( CURSOR_INVALID==pCur->eState ){
-      assert( pCur->pgnoRoot==0 || pCur->apPage[pCur->iPage]->nCell==0 );
-      *pRes = 1;
-    }else{
-      assert( pCur->eState==CURSOR_VALID );
-      *pRes = 0;
-      rc = moveToRightmost(pCur);
-      if( rc==SQLITE_OK ){
-        pCur->curFlags |= BTCF_AtLast;
-      }else{
-        pCur->curFlags &= ~BTCF_AtLast;
+      /* This block serves to assert() that the cursor really does point 
+      ** to the last entry in the b-tree. */
+      int ii;
+      for(ii=0; ii<pCur->iPage; ii++){
+        assert( pCur->aiIdx[ii]==pCur->apPage[ii]->nCell );
       }
-   
+      assert( pCur->aiIdx[pCur->iPage]==pCur->apPage[pCur->iPage]->nCell-1 );
+      assert( pCur->apPage[pCur->iPage]->leaf );
+#endif
+      return SQLITE_OK;
+    }
+
+    rc = moveToRoot(pCur);
+    if( rc==SQLITE_OK ){
+      if( CURSOR_INVALID==pCur->eState ){
+        assert( pCur->pgnoRoot==0 || pCur->apPage[pCur->iPage]->nCell==0 );
+        *pRes = 1;
+      }else{
+        assert( pCur->eState==CURSOR_VALID );
+        *pRes = 0;
+        rc = moveToRightmost(pCur);
+        if( rc==SQLITE_OK ){
+          pCur->curFlags |= BTCF_AtLast;
+        }else{
+          pCur->curFlags &= ~BTCF_AtLast;
+        }
+     
+      }
     }
   }
   return rc;

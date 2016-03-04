@@ -390,6 +390,10 @@ struct Vdbe {
   int nScan;              /* Entries in aScan[] */
   ScanStatus *aScan;      /* Scan definitions for sqlite3_stmt_scanstatus() */
 #endif
+  //Tarantool nested ops
+  int nNestedOps;
+  trntl_nested_func *pNestedOps;
+  NestedFuncContext *pNestedConts;
 };
 
 /*
