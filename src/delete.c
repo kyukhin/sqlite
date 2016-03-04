@@ -270,6 +270,9 @@ void sqlite3DeleteFrom(
   pTab = sqlite3SrcListLookup(pParse, pTabList);
   if( pTab==0 )  goto delete_from_cleanup;
 
+  sql_tarantool_api *trn_api = &pParse->db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum);
+
   /* Figure out if we have any triggers and if the table being
   ** deleted from is a view
   */
@@ -409,7 +412,7 @@ void sqlite3DeleteFrom(
     **  ONEPASS_MULTI:  One-pass approach - any number of rows may be deleted.
     */
 
-    pWInfo = sqlite3WhereBegin(pParse, pTabList, pWhere, 0, 0, wcf, iTabCur+1);
+    pWInfo = sqlite3WhereBegin(pParse, pTabList, pWhere, 0, 0, wcf, iTabCur+1, &iDataCur);
     if( pWInfo==0 ) goto delete_from_cleanup;
     eOnePass = sqlite3WhereOkOnePass(pWInfo, aiCurOnePass);
     assert( IsVirtual(pTab)==0 || eOnePass!=ONEPASS_MULTI );
@@ -483,8 +486,11 @@ void sqlite3DeleteFrom(
         iAddrOnce = sqlite3CodeOnce(pParse); VdbeCoverage(v);
       }
       testcase( IsVirtual(pTab) );
-      sqlite3OpenTableAndIndices(pParse, pTab, OP_OpenWrite, iTabCur, aToOpen,
-                                 &iDataCur, &iIdxCur, -1, 1);
+      if (!is_tarantool) {
+        /* In case of tarantool update we need not to open any index except data index*/
+        sqlite3OpenTableAndIndices(pParse, pTab, OP_OpenWrite, iTabCur, aToOpen,
+                                   &iDataCur, &iIdxCur, -1, 1);
+      }
       assert( pPk || IsVirtual(pTab) || iDataCur==iTabCur );
       assert( pPk || IsVirtual(pTab) || iIdxCur==iDataCur+1 );
       if( eOnePass==ONEPASS_MULTI ) sqlite3VdbeJumpHere(v, iAddrOnce);

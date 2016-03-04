@@ -3977,7 +3977,8 @@ WhereInfo *sqlite3WhereBegin(
   ExprList *pOrderBy,   /* An ORDER BY (or GROUP BY) clause, or NULL */
   ExprList *pResultSet, /* Result set of the query */
   u16 wctrlFlags,       /* One of the WHERE_* flags defined in sqliteInt.h */
-  int iIdxCur           /* If WHERE_ONETABLE_ONLY is set, index cursor number */
+  int iIdxCur,          /* If WHERE_ONETABLE_ONLY is set, index cursor number */
+  int *pDataCur         /* Whrite here index with data in case of tarantool space.*/
 ){
   int nByteWInfo;            /* Num. bytes allocated for WhereInfo struct */
   int nTabList;              /* Number of elements in pTabList */
@@ -4332,6 +4333,7 @@ WhereInfo *sqlite3WhereBegin(
         iIndexCur = pParse->nTab++;
       }
       pLevel->iIdxCur = iIndexCur;
+      if (pDataCur) *pDataCur = iIndexCur;
       assert( pIx->pSchema==pTab->pSchema );
       assert( iIndexCur>=0 );
       if( op ){
