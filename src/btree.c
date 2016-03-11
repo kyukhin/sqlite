@@ -8517,21 +8517,29 @@ cleardatabasepage_out:
 ** entries in the table.
 */
 int sqlite3BtreeClearTable(Btree *p, int iTable, int *pnChange){
-  int rc;
-  BtShared *pBt = p->pBt;
-  sqlite3BtreeEnter(p);
-  assert( p->inTrans==TRANS_WRITE );
+   int rc;
+  sql_tarantool_api *trn_api = &p->db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, iTable);
+  if (!is_tarantool) {
+    BtShared *pBt = p->pBt;
+    sqlite3BtreeEnter(p);
+    assert( p->inTrans==TRANS_WRITE );
 
-  rc = saveAllCursors(pBt, (Pgno)iTable, 0);
+    rc = saveAllCursors(pBt, (Pgno)iTable, 0);
 
-  if( SQLITE_OK==rc ){
-    /* Invalidate all incrblob cursors open on table iTable (assuming iTable
-    ** is the root of a table b-tree - if it is not, the following call is
-    ** a no-op).  */
-    invalidateIncrblobCursors(p, 0, 1);
-    rc = clearDatabasePage(pBt, (Pgno)iTable, 0, pnChange);
+    if( SQLITE_OK==rc ){
+      /* Invalidate all incrblob cursors open on table iTable (assuming iTable
+      ** is the root of a table b-tree - if it is not, the following call is
+      ** a no-op).  */
+      invalidateIncrblobCursors(p, 0, 1);
+      rc = clearDatabasePage(pBt, (Pgno)iTable, 0, pnChange);
+    }
+    sqlite3BtreeLeave(p);
   }
-  sqlite3BtreeLeave(p);
+  else {
+    trn_api->space_truncate_by_id(iTable);
+    rc = SQLITE_OK;
+  }
   return rc;
 }
 
