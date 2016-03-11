@@ -1145,7 +1145,9 @@ typedef struct sql_tarantool_api {
   int (*trntl_cursor_create)(void *self, Btree *p, int iTable, int wrFlag,
                               struct KeyInfo *pKeyInfo, BtCursor *pCur);
   /* Move pCur->trntl_cursor to first record */
-  int (*trntl_cursor_first)(void *self, BtCursor *pCur, int *pRes); 
+  int (*trntl_cursor_first)(void *self, BtCursor *pCur, int *pRes);
+  /* Move pCur->trntl_cursor to last record */
+  int (*trntl_cursor_last)(void *self, BtCursor *pCur, int *pRes);
   /* Get size of current tuple with its header */
   int (*trntl_cursor_data_size)(void *self, BtCursor *pCur, u32 *pSize);
   /* Get pointer to current tuple with header */
@@ -1167,10 +1169,23 @@ typedef struct sql_tarantool_api {
 
   int (*trntl_cursor_move_to_unpacked)(void *self, BtCursor *pCur, UnpackedRecord *pIdxKey, i64 intKey, int biasRight, int *pRes, RecordCompare xRecordCompare);
 
-  sqlite3 (*get_global_db)();
-
   void (*log_debug)(const char *msg);
+
+  int (*init_schema_with_table)(void *self_, Table *table);
+
+  int (*trntl_nested_insert_into_space)(int argc, void *argv);
+
+  sqlite3 *(*get_global_db)();
+
+  void (*set_global_db)(sqlite3 *db);
 } sql_tarantool_api;
+
+typedef int (*trntl_nested_func)(int, void *);
+
+typedef struct NestedFuncContext {
+  int argc;
+  void *argv;
+} NestedFuncContext;
 
 extern sql_tarantool_api global_trn_api;
 extern char global_trn_api_is_ready;
@@ -1571,6 +1586,8 @@ struct Column {
   u8 colFlags;     /* Boolean properties.  See COLFLAG_ defines below */
 };
 
+Column *make_deep_copy_Column(const Column *ob, sqlite3 *db);
+
 /* Allowed values for Column.colFlags:
 */
 #define COLFLAG_PRIMKEY  0x0001    /* Column is part of the primary key */
@@ -1730,6 +1747,8 @@ struct Table {
   Schema *pSchema;     /* Schema that contains this table */
   Table *pNextZombie;  /* Next on the Parse.pZombieTab list */
 };
+
+Table *make_deep_copy_Table(const Table *src, sqlite3 *db);
 
 /*
 ** Allowed values for Table.tabFlags.
@@ -1965,6 +1984,8 @@ struct SIndex {
   tRowcnt nRowEst0;        /* Non-logarithmic number of rows in the index */
 #endif
 };
+
+SIndex *make_deep_copy_SIndex(const SIndex *src, sqlite3 *db);
 
 /*
 ** Allowed values for Index.idxType

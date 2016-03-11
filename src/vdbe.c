@@ -722,6 +722,21 @@ int sqlite3VdbeExec(
 **
 *****************************************************************************/
 
+/* Opcode: Exec nested operation P1 * * * *
+** 
+** Execute one operation from Vdbe.pNestedOps[p1]
+** with argumnets from Vdbe.pNestedConts[p1]
+*/
+case OP_ExecNestedCallback: {
+  int num = pOp->p1;
+  NestedFuncContext *cont = p->pNestedConts + num;
+  trntl_nested_func func = p->pNestedOps[num];
+  if (func(cont->argc, cont->argv) != SQLITE_OK) {
+    goto vdbe_error_halt;
+  }
+  break;
+}
+
 /* Opcode:  Goto * P2 * * *
 **
 ** An unconditional jump to address P2.

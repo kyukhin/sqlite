@@ -704,8 +704,10 @@ char *sqlite3NameFromToken(sqlite3 *db, Token *pName){
 */
 void sqlite3OpenMasterTable(Parse *p, int iDb){
   Vdbe *v = sqlite3GetVdbe(p);
-  sqlite3TableLock(p, iDb, MASTER_ROOT, 1, SCHEMA_TABLE(iDb));
-  sqlite3VdbeAddOp4Int(v, OP_OpenWrite, 0, MASTER_ROOT, iDb, 5);
+  sqlite3 *db = v->db;
+  Table *master_table = sqlite3HashFind(&db->aDb[iDb].pSchema->tblHash, "sqlite_master");
+  sqlite3TableLock(p, iDb, master_table->tnum, 1, SCHEMA_TABLE(iDb));
+  sqlite3VdbeAddOp4Int(v, OP_OpenWrite, 0, master_table->tnum, iDb, 5);
   if( p->nTab==0 ){
     p->nTab = 1;
   }
@@ -982,70 +984,6 @@ void sqlite3StartTable(
     pTable->pSchema->pSeqTab = pTable;
   }
 #endif
-
-  /* Begin generating the code that will insert the table record into
-  ** the SQLITE_MASTER table.  Note in particular that we must go ahead
-  ** and allocate the record number for the table entry now.  Before any
-  ** PRIMARY KEY or UNIQUE keywords are parsed.  Those keywords will cause
-  ** indices to be created and the table record must come before the 
-  ** indices.  Hence, the record number for the table must be allocated
-  ** now.
-  */
-  if( !db->init.busy && (v = sqlite3GetVdbe(pParse))!=0 ){
-    int j1;
-    int fileFormat;
-    int reg1, reg2, reg3;
-    /* nullRow[] is an OP_Record encoding of a row containing 5 NULLs */
-    static const char nullRow[] = { 6, 0, 0, 0, 0, 0 };
-    sqlite3BeginWriteOperation(pParse, 1, iDb);
-
-#ifndef SQLITE_OMIT_VIRTUALTABLE
-    if( isVirtual ){
-      sqlite3VdbeAddOp0(v, OP_VBegin);
-    }
-#endif
-
-    /* If the file format and encoding in the database have not been set, 
-    ** set them now.
-    */
-    reg1 = pParse->regRowid = ++pParse->nMem;
-    reg2 = pParse->regRoot = ++pParse->nMem;
-    reg3 = ++pParse->nMem;
-    sqlite3VdbeAddOp3(v, OP_ReadCookie, iDb, reg3, BTREE_FILE_FORMAT);
-    sqlite3VdbeUsesBtree(v, iDb);
-    j1 = sqlite3VdbeAddOp1(v, OP_If, reg3); VdbeCoverage(v);
-    fileFormat = (db->flags & SQLITE_LegacyFileFmt)!=0 ?
-                  1 : SQLITE_MAX_FILE_FORMAT;
-    sqlite3VdbeAddOp2(v, OP_Integer, fileFormat, reg3);
-    sqlite3VdbeAddOp3(v, OP_SetCookie, iDb, BTREE_FILE_FORMAT, reg3);
-    sqlite3VdbeAddOp2(v, OP_Integer, ENC(db), reg3);
-    sqlite3VdbeAddOp3(v, OP_SetCookie, iDb, BTREE_TEXT_ENCODING, reg3);
-    sqlite3VdbeJumpHere(v, j1);
-
-    /* This just creates a place-holder record in the sqlite_master table.
-    ** The record created does not contain anything yet.  It will be replaced
-    ** by the real entry in code generated at sqlite3EndTable().
-    **
-    ** The rowid for the new entry is left in register pParse->regRowid.
-    ** The root page number of the new table is left in reg pParse->regRoot.
-    ** The rowid and root page number values are needed by the code that
-    ** sqlite3EndTable will generate.
-    */
-#if !defined(SQLITE_OMIT_VIEW) || !defined(SQLITE_OMIT_VIRTUALTABLE)
-    if( isView || isVirtual ){
-      sqlite3VdbeAddOp2(v, OP_Integer, 0, reg2);
-    }else
-#endif
-    {
-      pParse->addrCrTab = sqlite3VdbeAddOp2(v, OP_CreateTable, iDb, reg2);
-    }
-    sqlite3OpenMasterTable(pParse, iDb);
-    sqlite3VdbeAddOp2(v, OP_NewRowid, 0, reg1);
-    sqlite3VdbeAddOp4(v, OP_Blob, 6, reg3, 0, nullRow, P4_STATIC);
-    sqlite3VdbeAddOp3(v, OP_Insert, 0, reg3, reg1);
-    sqlite3VdbeChangeP5(v, OPFLAG_APPEND);
-    sqlite3VdbeAddOp0(v, OP_Close);
-  }
 
   /* Normal (non-error) return. */
   return;
@@ -1729,15 +1667,6 @@ static void convertToWithoutRowidTable(Parse *pParse, Table *pTab){
   }else{
     pPk = sqlite3PrimaryKeyIndex(pTab);
 
-    /* Bypass the creation of the PRIMARY KEY btree and the sqlite_master
-    ** table entry. This is only required if currently generating VDBE
-    ** code for a CREATE TABLE (not when parsing one as part of reading
-    ** a database schema).  */
-    if( v ){
-      assert( db->init.busy==0 );
-      sqlite3VdbeChangeOpcode(v, pPk->tnum, OP_Goto);
-    }
-
     /*
     ** Remove all redundant columns from the PRIMARY KEY.  For example, change
     ** "PRIMARY KEY(a,b,a,b,c,b,c,d)" into just "PRIMARY KEY(a,b,c,d)".  Later
@@ -1844,6 +1773,7 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
+  tabOpts |= TF_WithoutRowid;
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -1895,6 +1825,10 @@ void sqlite3EndTable(
     estimateIndexWidth(pIdx);
   }
 
+  Vdbe *v;
+  v = sqlite3GetVdbe(pParse);
+  if( NEVER(v==0) ) return;
+
   /* If not initializing, then create a record for the new table
   ** in the SQLITE_MASTER table of the database.
   **
@@ -1902,138 +1836,30 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
-    int n;
-    Vdbe *v;
-    char *zType;    /* "view" or "table" */
-    char *zType2;   /* "VIEW" or "TABLE" */
-    char *zStmt;    /* Text of the CREATE TABLE or CREATE VIEW statement */
+    sql_tarantool_api *trn_api = &db->trn_api;
+    trntl_nested_func *funcs = v->pNestedOps;
+    NestedFuncContext *conts = v->pNestedConts;
+    funcs[0] = trn_api->trntl_nested_insert_into_space;
+    int argc = 3;
+    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+    argv[0] = trn_api->self;
+    argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+    argv[2] = (void *)make_deep_copy_Table(p, db);
+    conts[0].argc = 3;
+    conts[0].argv = (void *)argv;
 
-    v = sqlite3GetVdbe(pParse);
-    if( NEVER(v==0) ) return;
+    void **index_argv = (void **)conts[1].argv;
+    ((SIndex *)index_argv[2])->pTable = (Table *)argv[2];
 
-    sqlite3VdbeAddOp1(v, OP_Close, 0);
-
-    /* 
-    ** Initialize zType for the new view or table.
-    */
-    if( p->pSelect==0 ){
-      /* A regular table */
-      zType = "table";
-      zType2 = "TABLE";
-#ifndef SQLITE_OMIT_VIEW
-    }else{
-      /* A view */
-      zType = "view";
-      zType2 = "VIEW";
-#endif
-    }
-
-    /* If this is a CREATE TABLE xx AS SELECT ..., execute the SELECT
-    ** statement to populate the new table. The root-page number for the
-    ** new table is in register pParse->regRoot.
-    **
-    ** Once the SELECT has been coded by sqlite3Select(), it is in a
-    ** suitable state to query for the column names and types to be used
-    ** by the new table.
-    **
-    ** A shared-cache write-lock is not required to write to the new table,
-    ** as a schema-lock must have already been obtained to create it. Since
-    ** a schema-lock excludes all other database users, the write-lock would
-    ** be redundant.
-    */
-    if( pSelect ){
-      SelectDest dest;    /* Where the SELECT should store results */
-      int regYield;       /* Register holding co-routine entry-point */
-      int addrTop;        /* Top of the co-routine */
-      int regRec;         /* A record to be insert into the new table */
-      int regRowid;       /* Rowid of the next row to insert */
-      int addrInsLoop;    /* Top of the loop for inserting rows */
-      Table *pSelTab;     /* A table that describes the SELECT results */
-
-      regYield = ++pParse->nMem;
-      regRec = ++pParse->nMem;
-      regRowid = ++pParse->nMem;
-      assert(pParse->nTab==1);
-      sqlite3MayAbort(pParse);
-      sqlite3VdbeAddOp3(v, OP_OpenWrite, 1, pParse->regRoot, iDb);
-      sqlite3VdbeChangeP5(v, OPFLAG_P2ISREG);
-      pParse->nTab = 2;
-      addrTop = sqlite3VdbeCurrentAddr(v) + 1;
-      sqlite3VdbeAddOp3(v, OP_InitCoroutine, regYield, 0, addrTop);
-      sqlite3SelectDestInit(&dest, SRT_Coroutine, regYield);
-      sqlite3Select(pParse, pSelect, &dest);
-      sqlite3VdbeAddOp1(v, OP_EndCoroutine, regYield);
-      sqlite3VdbeJumpHere(v, addrTop - 1);
-      if( pParse->nErr ) return;
-      pSelTab = sqlite3ResultSetOfSelect(pParse, pSelect);
-      if( pSelTab==0 ) return;
-      assert( p->aCol==0 );
-      p->nCol = pSelTab->nCol;
-      p->aCol = pSelTab->aCol;
-      pSelTab->nCol = 0;
-      pSelTab->aCol = 0;
-      sqlite3DeleteTable(db, pSelTab);
-      addrInsLoop = sqlite3VdbeAddOp1(v, OP_Yield, dest.iSDParm);
-      VdbeCoverage(v);
-      sqlite3VdbeAddOp3(v, OP_MakeRecord, dest.iSdst, dest.nSdst, regRec);
-      sqlite3TableAffinity(v, p, 0);
-      sqlite3VdbeAddOp2(v, OP_NewRowid, 1, regRowid);
-      sqlite3VdbeAddOp3(v, OP_Insert, 1, regRec, regRowid);
-      sqlite3VdbeGoto(v, addrInsLoop);
-      sqlite3VdbeJumpHere(v, addrInsLoop);
-      sqlite3VdbeAddOp1(v, OP_Close, 1);
-    }
-
-    /* Compute the complete text of the CREATE statement */
-    if( pSelect ){
-      zStmt = createTableStmt(db, p);
-    }else{
-      Token *pEnd2 = tabOpts ? &pParse->sLastToken : pEnd;
-      n = (int)(pEnd2->z - pParse->sNameToken.z);
-      if( pEnd2->z[0]!=';' ) n += pEnd2->n;
-      zStmt = sqlite3MPrintf(db, 
-          "CREATE %s %.*s", zType2, n, pParse->sNameToken.z
-      );
-    }
-
-    /* A slot for the record has already been allocated in the 
-    ** SQLITE_MASTER table.  We just need to update that slot with all
-    ** the information we've collected.
-    */
-    sqlite3NestedParse(pParse,
-      "UPDATE %Q.%s "
-         "SET type='%s', name=%Q, tbl_name=%Q, rootpage=#%d, sql=%Q "
-       "WHERE rowid=#%d",
-      db->aDb[iDb].zName, SCHEMA_TABLE(iDb),
-      zType,
-      p->zName,
-      p->zName,
-      pParse->regRoot,
-      zStmt,
-      pParse->regRowid
-    );
-    sqlite3DbFree(db, zStmt);
-    sqlite3ChangeCookie(pParse, iDb);
-
-#ifndef SQLITE_OMIT_AUTOINCREMENT
-    /* Check to see if we need to create an sqlite_sequence table for
-    ** keeping track of autoincrement keys.
-    */
-    if( p->tabFlags & TF_Autoincrement ){
-      Db *pDb = &db->aDb[iDb];
-      assert( sqlite3SchemaMutexHeld(db, iDb, 0) );
-      if( pDb->pSchema->pSeqTab==0 ){
-        sqlite3NestedParse(pParse,
-          "CREATE TABLE %Q.sqlite_sequence(name,seq)",
-          pDb->zName
-        );
+    //Move inserting index forward, after inserting space
+    for (int i = 0; i < v->nOp; ++i) {
+      VdbeOp *op = v->aOp + i;
+      if (op->opcode == OP_ExecNestedCallback) {
+        op->p1 = 0; //now insert into _space will be executed before inserting into _index
+        break;
       }
     }
-#endif
-
-    /* Reparse everything to update our internal data structures */
-    sqlite3VdbeAddParseSchemaOp(v, iDb,
-           sqlite3MPrintf(db, "tbl_name='%q' AND type!='trigger'", p->zName));
+    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 1); //exec inserting into _index
   }
 
 
@@ -3055,7 +2881,7 @@ SIndex *sqlite3CreateIndex(
     int n;
     SIndex *pLoop;
     for(pLoop=pTab->pIndex, n=1; pLoop; pLoop=pLoop->pNext, n++){}
-    zName = sqlite3MPrintf(db, "sqlite_autoindex_%s_%d", pTab->zName, n);
+    zName = sqlite3MPrintf(db, "a_ind_%s_%d", pTab->zName, n);
     if( zName==0 ){
       goto exit_create_index;
     }
@@ -3336,80 +3162,30 @@ SIndex *sqlite3CreateIndex(
     v = sqlite3GetVdbe(pParse);
     if( v==0 ) goto exit_create_index;
 
-    sqlite3BeginWriteOperation(pParse, 1, iDb);
-
-    /* Create the rootpage for the index using CreateIndex. But before
-    ** doing so, code a Noop instruction and store its address in 
-    ** Index.tnum. This is required in case this index is actually a 
-    ** PRIMARY KEY and the table is actually a WITHOUT ROWID table. In 
-    ** that case the convertToWithoutRowidTable() routine will replace
-    ** the Noop with a Goto to jump over the VDBE code generated below. */
-    pIndex->tnum = sqlite3VdbeAddOp0(v, OP_Noop);
-    sqlite3VdbeAddOp2(v, OP_CreateIndex, iDb, iMem);
-
-    /* Gather the complete text of the CREATE INDEX statement into
-    ** the zStmt variable
-    */
-    if( pStart ){
-      int n = (int)(pParse->sLastToken.z - pName->z) + pParse->sLastToken.n;
-      if( pName->z[n-1]==';' ) n--;
-      /* A named index with an explicit CREATE INDEX statement */
-      zStmt = sqlite3MPrintf(db, "CREATE%s INDEX %.*s",
-        onError==OE_None ? "" : " UNIQUE", n, pName->z);
-    }else{
-      /* An automatic index created by a PRIMARY KEY or UNIQUE constraint */
-      /* zStmt = sqlite3MPrintf(""); */
-      zStmt = 0;
-    }
-
-    /* Add an entry in sqlite_master for this index
-    */
-    sqlite3NestedParse(pParse, 
-        "INSERT INTO %Q.%s VALUES('index',%Q,%Q,#%d,%Q);",
-        db->aDb[iDb].zName, SCHEMA_TABLE(iDb),
-        pIndex->zName,
-        pTab->zName,
-        iMem,
-        zStmt
-    );
-    sqlite3DbFree(db, zStmt);
-
-    /* Fill the index with data and reparse the schema. Code an OP_Expire
-    ** to invalidate all pre-compiled statements.
-    */
-    if( pTblName ){
-      sqlite3RefillIndex(pParse, pIndex, iMem);
-      sqlite3ChangeCookie(pParse, iDb);
-      sqlite3VdbeAddParseSchemaOp(v, iDb,
-         sqlite3MPrintf(db, "name='%q' AND type='index'", pIndex->zName));
-      sqlite3VdbeAddOp1(v, OP_Expire, 0);
-    }
-
-    sqlite3VdbeJumpHere(v, pIndex->tnum);
+    sql_tarantool_api *trn_api = &db->trn_api;
+    v->nNestedOps = 2;
+    int nOps = v->nNestedOps;
+    int last = nOps - 1;
+    trntl_nested_func *funcs;
+    struct NestedFuncContext *conts;
+    funcs = sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * nOps);
+    conts = sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * nOps);
+    v->pNestedOps = funcs;
+    v->pNestedConts = conts;
+    funcs[last] = trn_api->trntl_nested_insert_into_space;
+    int argc = 3;
+    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+    argv[0] = trn_api->self;
+    argv[1] = (void *)sqlite3DbStrDup(db, "_index");
+    argv[2] = (void *)make_deep_copy_SIndex(pIndex, db);
+    conts[last].argc = 3;
+    conts[last].argv = (void *)argv;
+    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, last);
   }
 
-  /* When adding an index to the list of indices for a table, make
-  ** sure all indices labeled OE_Replace come after all those labeled
-  ** OE_Ignore.  This is necessary for the correct constraint check
-  ** processing (in sqlite3GenerateConstraintChecks()) as part of
-  ** UPDATE and INSERT statements.  
-  */
-  if( db->init.busy || pTblName==0 ){
-    if( onError!=OE_Replace || pTab->pIndex==0
-         || pTab->pIndex->onError==OE_Replace){
-      pIndex->pNext = pTab->pIndex;
-      pTab->pIndex = pIndex;
-    }else{
-      SIndex *pOther = pTab->pIndex;
-      while( pOther->pNext && pOther->pNext->onError!=OE_Replace ){
-        pOther = pOther->pNext;
-      }
-      pIndex->pNext = pOther->pNext;
-      pOther->pNext = pIndex;
-    }
-    pRet = pIndex;
-    pIndex = 0;
-  }
+  pRet = pIndex;
+  pTab->pIndex = pIndex;
+  pIndex = NULL;
 
   /* Clean up before exiting */
 exit_create_index:
