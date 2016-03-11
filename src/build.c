@@ -1773,9 +1773,7 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
-
-  if (!db->init.busy)
-    tabOpts |= TF_WithoutRowid;
+  tabOpts |= TF_WithoutRowid;
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -2883,7 +2881,7 @@ SIndex *sqlite3CreateIndex(
     int n;
     SIndex *pLoop;
     for(pLoop=pTab->pIndex, n=1; pLoop; pLoop=pLoop->pNext, n++){}
-    zName = sqlite3MPrintf(db, "sqlite_autoindex_%s_%d", pTab->zName, n);
+    zName = sqlite3MPrintf(db, "a_ind_%s_%d", pTab->zName, n);
     if( zName==0 ){
       goto exit_create_index;
     }

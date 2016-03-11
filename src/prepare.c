@@ -158,7 +158,8 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
      "  name text,\n"
      "  tbl_name text,\n"
      "  rootpage integer,\n"
-     "  sql text\n"
+     "  sql text,\n"
+     "  PRIMARY KEY(type, name, tbl_name)\n"
      ")"
   ;
 #ifndef SQLITE_OMIT_TEMPDB
@@ -168,7 +169,8 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
      "  name text,\n"
      "  tbl_name text,\n"
      "  rootpage integer,\n"
-     "  sql text\n"
+     "  sql text,\n"
+     "  PRIMARY KEY (type, name, tbl_name)\n"
      ")"
   ;
 #else
@@ -207,21 +209,21 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
   }
   pTab = sqlite3FindTable(db, zMasterName, db->aDb[iDb].zName);
   if( ALWAYS(pTab) ){
-    pTab->tabFlags |= TF_Readonly;
-    if (iDb == 0) {
-      //insert this table to tarantool
-      sql_tarantool_api *trn_api = &db->trn_api;
-      trn_api->set_global_db(db);
-      rc = trn_api->init_schema_with_table(trn_api->self, pTab);
-      if (rc != SQLITE_OK) {
-        goto error_out;
-      }
+    //insert this table to tarantool
+    sql_tarantool_api *trn_api = &db->trn_api;
+    trn_api->set_global_db(db);
+    rc = trn_api->init_schema_with_table(trn_api->self, pTab);
+    if (rc != SQLITE_OK) {
+      goto error_out;
     }
   }
-
+  
   /* Create a cursor to hold the database open
   */
   pDb = &db->aDb[iDb];
+  
+  //Tarantool: here we add new tables to db
+  db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema, &(pDb->pSchema->idxHash), &(pDb->pSchema->tblHash));
   if( pDb->pBt==0 ){
     if( !OMIT_TEMPDB && ALWAYS(iDb==1) ){
       DbSetProperty(db, 1, DB_SchemaLoaded);
@@ -229,10 +231,6 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
     return SQLITE_OK;
   }
   
-  //Tarantool: here we add new tables to db
-  if (iDb == 0) {
-    db->trn_api.get_trntl_spaces(db->trn_api.self, db, pzErrMsg, db->aDb[iDb].pSchema, &(pDb->pSchema->idxHash), &(pDb->pSchema->tblHash));
-  }
 
   /* If there is not already a read-only (or read-write) transaction opened
   ** on the b-tree database, open one now. If a transaction is opened, it 
@@ -335,33 +333,7 @@ static int sqlite3InitOne(sqlite3 *db, int iDb, char **pzErrMsg){
     db->flags &= ~SQLITE_LegacyFileFmt;
   }
 
-  /* Read the schema information out of the schema tables
-  */
-  assert( db->init.busy );
-  {
-    char *zSql;
-    zSql = sqlite3MPrintf(db, 
-        "SELECT name, rootpage, sql FROM '%q'.%s ORDER BY rowid",
-        db->aDb[iDb].zName, zMasterName);
-#ifndef SQLITE_OMIT_AUTHORIZATION
-    {
-      sqlite3_xauth xAuth;
-      xAuth = db->xAuth;
-      db->xAuth = 0;
-#endif
-      rc = sqlite3_exec(db, zSql, sqlite3InitCallback, &initData, 0);
-#ifndef SQLITE_OMIT_AUTHORIZATION
-      db->xAuth = xAuth;
-    }
-#endif
-    if( rc==SQLITE_OK ) rc = initData.rc;
-    sqlite3DbFree(db, zSql);
-#ifndef SQLITE_OMIT_ANALYZE
-    if( rc==SQLITE_OK ){
-      sqlite3AnalysisLoad(db, iDb);
-    }
-#endif
-  }
+  rc = SQLITE_OK;
   if( db->mallocFailed ){
     rc = SQLITE_NOMEM;
     sqlite3ResetAllSchemasOfConnection(db);
@@ -418,7 +390,7 @@ int sqlite3Init(sqlite3 *db, char **pzErrMsg){
   db->init.busy = 1;
   ENC(db) = SCHEMA_ENC(db);
   for(i=0; rc==SQLITE_OK && i<db->nDb; i++){
-    if( DbHasProperty(db, i, DB_SchemaLoaded) || i==1 ) continue;
+    if( DbHasProperty(db, i, DB_SchemaLoaded)) continue;
     rc = sqlite3InitOne(db, i, pzErrMsg);
     if( rc ){
       sqlite3ResetOneSchema(db, i);
