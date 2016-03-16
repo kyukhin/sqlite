@@ -3846,6 +3846,7 @@ sql_callback(void *data, int cols, char **values, char **names) {
 extern int make_connect_sqlite_db(const char *db_name, struct sqlite3 **db);
 extern int sql_callback(void *data, int cols, char **values, char **names);
 extern void prepare_to_open_db();
+extern void connect_triggers();
 
 #define TCLSH_MAIN main   /* Needed to fake out mktclapp */
 int TCLSH_MAIN(int argc, char **argv){
@@ -3853,6 +3854,7 @@ int TCLSH_MAIN(int argc, char **argv){
 
   struct sqlite3 *db = NULL;
   prepare_to_open_db();
+  connect_triggers();
 
 #if !defined(_WIN32_WCE)
   if( getenv("BREAK") ){

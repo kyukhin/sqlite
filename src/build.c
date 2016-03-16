@@ -1774,6 +1774,7 @@ void sqlite3EndTable(
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
   tabOpts |= TF_WithoutRowid;
+  int cnt, i;
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -1839,6 +1840,25 @@ void sqlite3EndTable(
     sql_tarantool_api *trn_api = &db->trn_api;
     trntl_nested_func *funcs = v->pNestedOps;
     NestedFuncContext *conts = v->pNestedConts;
+    cnt = v->nNestedOps;
+    if (cnt == 1) {
+      v->nNestedOps = 2;
+      cnt = 2;
+      //only index is now creating
+      //we need to add new callback
+      trntl_nested_func *new_funcs =
+        sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
+      NestedFuncContext *new_conts =
+        sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
+      new_funcs[1] = funcs[0];
+      new_conts[1] = conts[0];
+      sqlite3DbFree(db, funcs);
+      sqlite3DbFree(db, conts);
+      funcs = new_funcs;
+      conts = new_conts;
+      v->pNestedOps = funcs;
+      v->pNestedConts = conts;
+    }
     funcs[0] = trn_api->trntl_nested_insert_into_space;
     int argc = 3;
     void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
@@ -1851,14 +1871,6 @@ void sqlite3EndTable(
     void **index_argv = (void **)conts[1].argv;
     ((SIndex *)index_argv[2])->pTable = (Table *)argv[2];
 
-    //Move inserting index forward, after inserting space
-    for (int i = 0; i < v->nOp; ++i) {
-      VdbeOp *op = v->aOp + i;
-      if (op->opcode == OP_ExecNestedCallback) {
-        op->p1 = 0; //now insert into _space will be executed before inserting into _index
-        break;
-      }
-    }
     sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 1); //exec inserting into _index
   }
 
@@ -3163,7 +3175,7 @@ SIndex *sqlite3CreateIndex(
     if( v==0 ) goto exit_create_index;
 
     sql_tarantool_api *trn_api = &db->trn_api;
-    v->nNestedOps = 2;
+    v->nNestedOps = 1;
     int nOps = v->nNestedOps;
     int last = nOps - 1;
     trntl_nested_func *funcs;
@@ -3184,6 +3196,9 @@ SIndex *sqlite3CreateIndex(
   }
 
   pRet = pIndex;
+  if (pTab->pIndex) {
+    pIndex->pNext = pTab->pIndex;
+  }
   pTab->pIndex = pIndex;
   pIndex = NULL;
 
