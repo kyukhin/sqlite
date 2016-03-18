@@ -154,6 +154,12 @@ void sqlite3Update(
   if( pTab==0 ) goto update_cleanup;
   iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
 
+  /* Check that table is actualy tarantool space.
+  */
+  sql_tarantool_api *trn_api = &pParse->db->trn_api;
+  char is_tarantool = trn_api->check_num_on_tarantool_id(trn_api->self, pTab->tnum);
+
+
   /* Figure out if we have any triggers and if the table being
   ** updated is a view.
   */
@@ -186,8 +192,8 @@ void sqlite3Update(
   pTabList->a[0].iCursor = iBaseCur = iDataCur = pParse->nTab++;
   iIdxCur = iDataCur+1;
   pPk = HasRowid(pTab) ? 0 : sqlite3PrimaryKeyIndex(pTab);
-  for(nIdx=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, nIdx++){
-    if( IsPrimaryKeyIndex(pIdx) && pPk!=0 ){
+  for(nIdx=0, pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext, ++nIdx){
+    if(IsPrimaryKeyIndex(pIdx) && pPk!=0){
       iDataCur = pParse->nTab;
       pTabList->a[0].iCursor = iDataCur;
     }
@@ -290,8 +296,19 @@ void sqlite3Update(
         }
       }
     }
-    if( reg==0 ) aToOpen[j+1] = 0;
-    aRegIdx[j] = reg;
+    if( is_tarantool ) {
+      if (j != iDataCur - iIdxCur) {
+        aToOpen[j+1] = 0;
+        aRegIdx[j] = 0; 
+      }else{
+        aToOpen[j+1] = 1;
+        aRegIdx[j] = reg;
+      }
+    }
+    else {
+      if( reg==0 ) aToOpen[j+1] = 0;
+      aRegIdx[j] = reg;
+    }
   }
 
   /* Begin generating code. */
@@ -350,7 +367,7 @@ void sqlite3Update(
   if( HasRowid(pTab) ){
     sqlite3VdbeAddOp3(v, OP_Null, 0, regRowSet, regOldRowid);
     pWInfo = sqlite3WhereBegin(
-        pParse, pTabList, pWhere, 0, 0, WHERE_ONEPASS_DESIRED, iIdxCur
+        pParse, pTabList, pWhere, 0, 0, WHERE_ONEPASS_DESIRED, iIdxCur, 0
     );
     if( pWInfo==0 ) goto update_cleanup;
     okOnePass = sqlite3WhereOkOnePass(pWInfo, aiCurOnePass);
@@ -380,7 +397,7 @@ void sqlite3Update(
     addrOpen = sqlite3VdbeAddOp2(v, OP_OpenEphemeral, iEph, nPk);
     sqlite3VdbeSetP4KeyInfo(pParse, pPk);
     pWInfo = sqlite3WhereBegin(pParse, pTabList, pWhere, 0, 0, 
-                               WHERE_ONEPASS_DESIRED, iIdxCur);
+                               WHERE_ONEPASS_DESIRED, iIdxCur, 0);
     if( pWInfo==0 ) goto update_cleanup;
     okOnePass = sqlite3WhereOkOnePass(pWInfo, aiCurOnePass);
     for(i=0; i<nPk; i++){
@@ -408,20 +425,22 @@ void sqlite3Update(
   }
 
   labelBreak = sqlite3VdbeMakeLabel(v);
-  if( !isView ){
+  if( !isView){
     /* 
     ** Open every index that needs updating.  Note that if any
     ** index could potentially invoke a REPLACE conflict resolution 
     ** action, then we need to open all indices because we might need
     ** to be deleting some records.
     */
-    if( onError==OE_Replace ){
-      memset(aToOpen, 1, nIdx+1);
-    }else{
-      for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-        if( pIdx->onError==OE_Replace ){
-          memset(aToOpen, 1, nIdx+1);
-          break;
+    if (!is_tarantool) {
+      if( onError==OE_Replace ){
+        memset(aToOpen, 1, nIdx+1);
+      }else{
+        for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+          if( pIdx->onError==OE_Replace ){
+            memset(aToOpen, 1, nIdx+1);
+            break;
+          }
         }
       }
     }
@@ -430,7 +449,7 @@ void sqlite3Update(
       if( aiCurOnePass[1]>=0 ) aToOpen[aiCurOnePass[1]-iBaseCur] = 0;
     }
     sqlite3OpenTableAndIndices(pParse, pTab, OP_OpenWrite, iBaseCur, aToOpen,
-                               0, 0);
+                               0, 0, iDataCur, 1);
   }
 
   /* Top of the update loop */
@@ -739,7 +758,7 @@ static void updateVirtualTable(
   regRowid = ++pParse->nMem;
 
   /* Start scanning the virtual table */
-  pWInfo = sqlite3WhereBegin(pParse, pSrc, pWhere, 0,0,WHERE_ONEPASS_DESIRED,0);
+  pWInfo = sqlite3WhereBegin(pParse, pSrc, pWhere, 0,0,WHERE_ONEPASS_DESIRED,0,0);
   if( pWInfo==0 ) return;
 
   /* Populate the argument registers. */

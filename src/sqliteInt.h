@@ -1161,6 +1161,8 @@ typedef struct sql_tarantool_api {
     i64 nKey, const void *pData, int nData, int nZero, int appendBias,
     int seekResult);
 
+  int (*trntl_cursor_delete_current)(void *self, BtCursor *pCur, int bPreserve);
+
   int (*trntl_cursor_close)(void *self, BtCursor *pCur);
 
   char (*check_num_on_tarantool_id)(void *self, u32 num);
@@ -3461,7 +3463,7 @@ Expr *sqlite3LimitWhere(Parse*,SrcList*,Expr*,ExprList*,Expr*,Expr*,char*);
 #endif
 void sqlite3DeleteFrom(Parse*, SrcList*, Expr*);
 void sqlite3Update(Parse*, SrcList*, ExprList*, Expr*, int);
-WhereInfo *sqlite3WhereBegin(Parse*,SrcList*,Expr*,ExprList*,ExprList*,u16,int);
+WhereInfo *sqlite3WhereBegin(Parse*,SrcList*,Expr*,ExprList*,ExprList*,u16,int,int*);
 void sqlite3WhereEnd(WhereInfo*);
 u64 sqlite3WhereOutputRowCount(WhereInfo*);
 int sqlite3WhereIsDistinct(WhereInfo*);
@@ -3541,7 +3543,7 @@ void sqlite3ResolvePartIdxLabel(Parse*,int);
 void sqlite3GenerateConstraintChecks(Parse*,Table*,int*,int,int,int,int,
                                      u8,u8,int,int*);
 void sqlite3CompleteInsertion(Parse*,Table*,int,int,int,int*,int,int,int);
-int sqlite3OpenTableAndIndices(Parse*, Table*, int, int, u8*, int*, int*);
+int sqlite3OpenTableAndIndices(Parse*, Table*, int, int, u8*, int*, int*, int, int);
 void sqlite3BeginWriteOperation(Parse*, int, int);
 void sqlite3MultiWrite(Parse*);
 void sqlite3MayAbort(Parse*);

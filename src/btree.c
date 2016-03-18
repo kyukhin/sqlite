@@ -8134,6 +8134,8 @@ int sqlite3BtreeDelete(BtCursor *pCur, int bPreserve){
   int iCellDepth;                      /* Depth of node containing pCell */ 
   u16 szCell;                          /* Size of the cell being deleted */
   int bSkipnext = 0;                   /* Leaf cursor in SKIPNEXT state */
+  sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api; 
+
 
   assert( cursorHoldsMutex(pCur) );
   assert( pBt->inTransaction==TRANS_WRITE );
@@ -8144,114 +8146,121 @@ int sqlite3BtreeDelete(BtCursor *pCur, int bPreserve){
   assert( pCur->aiIdx[pCur->iPage]<pCur->apPage[pCur->iPage]->nCell );
   assert( pCur->eState==CURSOR_VALID );
 
-  iCellDepth = pCur->iPage;
-  iCellIdx = pCur->aiIdx[iCellDepth];
-  pPage = pCur->apPage[iCellDepth];
-  pCell = findCell(pPage, iCellIdx);
 
-  /* If the page containing the entry to delete is not a leaf page, move
-  ** the cursor to the largest entry in the tree that is smaller than
-  ** the entry being deleted. This cell will replace the cell being deleted
-  ** from the internal node. The 'previous' entry is used for this instead
-  ** of the 'next' entry, as the previous entry is always a part of the
-  ** sub-tree headed by the child page of the cell being deleted. This makes
-  ** balancing the tree following the delete operation easier.  */
-  if( !pPage->leaf ){
-    int notUsed = 0;
-    rc = sqlite3BtreePrevious(pCur, &notUsed);
-    if( rc ) return rc;
-  }
+  if (!pCur->is_tarantool) {
+    iCellDepth = pCur->iPage;
+    iCellIdx = pCur->aiIdx[iCellDepth];
+    pPage = pCur->apPage[iCellDepth];
+    pCell = findCell(pPage, iCellIdx);
 
-  /* Save the positions of any other cursors open on this table before
-  ** making any modifications.  */
-  if( pCur->curFlags & BTCF_Multiple ){
-    rc = saveAllCursors(pBt, pCur->pgnoRoot, pCur);
-    if( rc ) return rc;
-  }
-
-  /* If this is a delete operation to remove a row from a table b-tree,
-  ** invalidate any incrblob cursors open on the row being deleted.  */
-  if( pCur->pKeyInfo==0 ){
-    invalidateIncrblobCursors(p, pCur->info.nKey, 0);
-  }
-
-  /* If the bPreserve flag is set to true, then the cursor position must
-  ** be preserved following this delete operation. If the current delete
-  ** will cause a b-tree rebalance, then this is done by saving the cursor
-  ** key and leaving the cursor in CURSOR_REQUIRESEEK state before 
-  ** returning. 
-  **
-  ** Or, if the current delete will not cause a rebalance, then the cursor
-  ** will be left in CURSOR_SKIPNEXT state pointing to the entry immediately
-  ** before or after the deleted entry. In this case set bSkipnext to true.  */
-  if( bPreserve ){
-    if( !pPage->leaf 
-     || (pPage->nFree+cellSizePtr(pPage,pCell)+2)>(int)(pBt->usableSize*2/3)
-    ){
-      /* A b-tree rebalance will be required after deleting this entry.
-      ** Save the cursor key.  */
-      rc = saveCursorKey(pCur);
+    /* If the page containing the entry to delete is not a leaf page, move
+    ** the cursor to the largest entry in the tree that is smaller than
+    ** the entry being deleted. This cell will replace the cell being deleted
+    ** from the internal node. The 'previous' entry is used for this instead
+    ** of the 'next' entry, as the previous entry is always a part of the
+    ** sub-tree headed by the child page of the cell being deleted. This makes
+    ** balancing the tree following the delete operation easier.  */
+    if( !pPage->leaf ){
+      int notUsed = 0;
+      rc = sqlite3BtreePrevious(pCur, &notUsed);
       if( rc ) return rc;
-    }else{
-      bSkipnext = 1;
     }
-  }
 
-  /* Make the page containing the entry to be deleted writable. Then free any
-  ** overflow pages associated with the entry and finally remove the cell
-  ** itself from within the page.  */
-  rc = sqlite3PagerWrite(pPage->pDbPage);
-  if( rc ) return rc;
-  rc = clearCell(pPage, pCell, &szCell);
-  dropCell(pPage, iCellIdx, szCell, &rc);
-  if( rc ) return rc;
+    /* Save the positions of any other cursors open on this table before
+    ** making any modifications.  */
+    if( pCur->curFlags & BTCF_Multiple ){
+      rc = saveAllCursors(pBt, pCur->pgnoRoot, pCur);
+      if( rc ) return rc;
+    }
 
-  /* If the cell deleted was not located on a leaf page, then the cursor
-  ** is currently pointing to the largest entry in the sub-tree headed
-  ** by the child-page of the cell that was just deleted from an internal
-  ** node. The cell from the leaf node needs to be moved to the internal
-  ** node to replace the deleted cell.  */
-  if( !pPage->leaf ){
-    MemPage *pLeaf = pCur->apPage[pCur->iPage];
-    int nCell;
-    Pgno n = pCur->apPage[iCellDepth+1]->pgno;
-    unsigned char *pTmp;
+    /* If this is a delete operation to remove a row from a table b-tree,
+    ** invalidate any incrblob cursors open on the row being deleted.  */
+    if( pCur->pKeyInfo==0 ){
+      invalidateIncrblobCursors(p, pCur->info.nKey, 0);
+    }
 
-    pCell = findCell(pLeaf, pLeaf->nCell-1);
-    if( pCell<&pLeaf->aData[4] ) return SQLITE_CORRUPT_BKPT;
-    nCell = pLeaf->xCellSize(pLeaf, pCell);
-    assert( MX_CELL_SIZE(pBt) >= nCell );
-    pTmp = pBt->pTmpSpace;
-    assert( pTmp!=0 );
-    rc = sqlite3PagerWrite(pLeaf->pDbPage);
-    insertCell(pPage, iCellIdx, pCell-4, nCell+4, pTmp, n, &rc);
-    dropCell(pLeaf, pLeaf->nCell-1, nCell, &rc);
+    /* If the bPreserve flag is set to true, then the cursor position must
+    ** be preserved following this delete operation. If the current delete
+    ** will cause a b-tree rebalance, then this is done by saving the cursor
+    ** key and leaving the cursor in CURSOR_REQUIRESEEK state before 
+    ** returning. 
+    **
+    ** Or, if the current delete will not cause a rebalance, then the cursor
+    ** will be left in CURSOR_SKIPNEXT state pointing to the entry immediately
+    ** before or after the deleted entry. In this case set bSkipnext to true.  */
+    if( bPreserve ){
+      if( !pPage->leaf 
+       || (pPage->nFree+cellSizePtr(pPage,pCell)+2)>(int)(pBt->usableSize*2/3)
+      ){
+        /* A b-tree rebalance will be required after deleting this entry.
+        ** Save the cursor key.  */
+        rc = saveCursorKey(pCur);
+        if( rc ) return rc;
+      }else{
+        bSkipnext = 1;
+      }
+    }
+
+    /* Make the page containing the entry to be deleted writable. Then free any
+    ** overflow pages associated with the entry and finally remove the cell
+    ** itself from within the page.  */
+    rc = sqlite3PagerWrite(pPage->pDbPage);
     if( rc ) return rc;
-  }
+    rc = clearCell(pPage, pCell, &szCell);
+    dropCell(pPage, iCellIdx, szCell, &rc);
+    if( rc ) return rc;
 
-  /* Balance the tree. If the entry deleted was located on a leaf page,
-  ** then the cursor still points to that page. In this case the first
-  ** call to balance() repairs the tree, and the if(...) condition is
-  ** never true.
-  **
-  ** Otherwise, if the entry deleted was on an internal node page, then
-  ** pCur is pointing to the leaf page from which a cell was removed to
-  ** replace the cell deleted from the internal node. This is slightly
-  ** tricky as the leaf node may be underfull, and the internal node may
-  ** be either under or overfull. In this case run the balancing algorithm
-  ** on the leaf node first. If the balance proceeds far enough up the
-  ** tree that we can be sure that any problem in the internal node has
-  ** been corrected, so be it. Otherwise, after balancing the leaf node,
-  ** walk the cursor up the tree to the internal node and balance it as 
-  ** well.  */
-  rc = balance(pCur);
-  if( rc==SQLITE_OK && pCur->iPage>iCellDepth ){
-    while( pCur->iPage>iCellDepth ){
-      releasePage(pCur->apPage[pCur->iPage--]);
+    /* If the cell deleted was not located on a leaf page, then the cursor
+    ** is currently pointing to the largest entry in the sub-tree headed
+    ** by the child-page of the cell that was just deleted from an internal
+    ** node. The cell from the leaf node needs to be moved to the internal
+    ** node to replace the deleted cell.  */
+    if( !pPage->leaf ){
+      MemPage *pLeaf = pCur->apPage[pCur->iPage];
+      int nCell;
+      Pgno n = pCur->apPage[iCellDepth+1]->pgno;
+      unsigned char *pTmp;
+
+      pCell = findCell(pLeaf, pLeaf->nCell-1);
+      if( pCell<&pLeaf->aData[4] ) return SQLITE_CORRUPT_BKPT;
+      nCell = pLeaf->xCellSize(pLeaf, pCell);
+      assert( MX_CELL_SIZE(pBt) >= nCell );
+      pTmp = pBt->pTmpSpace;
+      assert( pTmp!=0 );
+      rc = sqlite3PagerWrite(pLeaf->pDbPage);
+      insertCell(pPage, iCellIdx, pCell-4, nCell+4, pTmp, n, &rc);
+      dropCell(pLeaf, pLeaf->nCell-1, nCell, &rc);
+      if( rc ) return rc;
     }
-    rc = balance(pCur);
-  }
 
+    /* Balance the tree. If the entry deleted was located on a leaf page,
+    ** then the cursor still points to that page. In this case the first
+    ** call to balance() repairs the tree, and the if(...) condition is
+    ** never true.
+    **
+    ** Otherwise, if the entry deleted was on an internal node page, then
+    ** pCur is pointing to the leaf page from which a cell was removed to
+    ** replace the cell deleted from the internal node. This is slightly
+    ** tricky as the leaf node may be underfull, and the internal node may
+    ** be either under or overfull. In this case run the balancing algorithm
+    ** on the leaf node first. If the balance proceeds far enough up the
+    ** tree that we can be sure that any problem in the internal node has
+    ** been corrected, so be it. Otherwise, after balancing the leaf node,
+    ** walk the cursor up the tree to the internal node and balance it as 
+    ** well.  */
+    rc = balance(pCur);
+    if( rc==SQLITE_OK && pCur->iPage>iCellDepth ){
+      while( pCur->iPage>iCellDepth ){
+        releasePage(pCur->apPage[pCur->iPage--]);
+      }
+      rc = balance(pCur);
+    }
+  }else{ /*!pCur->is_tarantool*/
+      //Delete from tarantool
+      rc = trn_api->trntl_cursor_delete_current(trn_api->self, pCur, bPreserve);
+      return rc;
+  }
+  
   if( rc==SQLITE_OK ){
     if( bSkipnext ){
       assert( bPreserve && pCur->iPage==iCellDepth );
