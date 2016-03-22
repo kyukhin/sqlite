@@ -8669,9 +8669,14 @@ static int btreeDropTable(Btree *p, Pgno iTable, int *piMoved){
 }
 int sqlite3BtreeDropTable(Btree *p, int iTable, int *piMoved){
   int rc;
-  sqlite3BtreeEnter(p);
-  rc = btreeDropTable(p, iTable, piMoved);
-  sqlite3BtreeLeave(p);
+  sql_tarantool_api *trn_api = &p->db->trn_api;
+  if (trn_api->check_num_on_tarantool_id(trn_api->self, iTable)) {
+    rc = trn_api->trntl_drop_table(p, iTable, piMoved);
+  } else {
+    sqlite3BtreeEnter(p);
+    rc = btreeDropTable(p, iTable, piMoved);
+    sqlite3BtreeLeave(p);
+  }
   return rc;
 }
 

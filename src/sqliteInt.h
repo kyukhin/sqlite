@@ -1175,6 +1175,8 @@ typedef struct sql_tarantool_api {
 
   int (*trntl_nested_insert_into_space)(int argc, void *argv);
 
+  int (*trntl_drop_table)(Btree *p, int iTable, int *piMoved);
+
   sqlite3 *(*get_global_db)();
 
   void (*set_global_db)(sqlite3 *db);

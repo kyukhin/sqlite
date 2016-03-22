@@ -2164,9 +2164,9 @@ static void destroyRootPage(Parse *pParse, int iTable, int iDb){
   ** is in register NNN.  See grammar rules associated with the TK_REGISTER
   ** token for additional information.
   */
-  sqlite3NestedParse(pParse, 
-     "UPDATE %Q.%s SET rootpage=%d WHERE #%d AND rootpage=#%d",
-     pParse->db->aDb[iDb].zName, SCHEMA_TABLE(iDb), iTable, r1, r1);
+  // sqlite3NestedParse(pParse, 
+  //    "UPDATE %Q.%s SET rootpage=%d WHERE #%d AND rootpage=#%d",
+  //    pParse->db->aDb[iDb].zName, SCHEMA_TABLE(iDb), iTable, r1, r1);
 #endif
   sqlite3ReleaseTempReg(pParse, r1);
 }
@@ -2178,14 +2178,16 @@ static void destroyRootPage(Parse *pParse, int iTable, int iDb){
 ** is also added (this can happen with an auto-vacuum database).
 */
 static void destroyTable(Parse *pParse, Table *pTab){
-#ifdef SQLITE_OMIT_AUTOVACUUM
-  Index *pIdx;
   int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
   destroyRootPage(pParse, pTab->tnum, iDb);
-  for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-    destroyRootPage(pParse, pIdx->tnum, iDb);
-  }
-#else
+// #ifdef SQLITE_OMIT_AUTOVACUUM
+//   Index *pIdx;
+//   int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
+//   destroyRootPage(pParse, pTab->tnum, iDb);
+//   for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+//     destroyRootPage(pParse, pIdx->tnum, iDb);
+//   }
+// #else
   /* If the database may be auto-vacuum capable (if SQLITE_OMIT_AUTOVACUUM
   ** is not defined), then it is important to call OP_Destroy on the
   ** table and index root-pages in order, starting with the numerically 
@@ -2202,33 +2204,33 @@ static void destroyTable(Parse *pParse, Table *pTab){
   ** "OP_Destroy 4 0" opcode. The subsequent "OP_Destroy 5 0" would hit
   ** a free-list page.
   */
-  int iTab = pTab->tnum;
-  int iDestroyed = 0;
+//   int iTab = pTab->tnum;
+//   int iDestroyed = 0;
 
-  while( 1 ){
-    SIndex *pIdx;
-    int iLargest = 0;
+//   while( 1 ){
+//     SIndex *pIdx;
+//     int iLargest = 0;
 
-    if( iDestroyed==0 || iTab<iDestroyed ){
-      iLargest = iTab;
-    }
-    for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-      int iIdx = pIdx->tnum;
-      assert( pIdx->pSchema==pTab->pSchema );
-      if( (iDestroyed==0 || (iIdx<iDestroyed)) && iIdx>iLargest ){
-        iLargest = iIdx;
-      }
-    }
-    if( iLargest==0 ){
-      return;
-    }else{
-      int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
-      assert( iDb>=0 && iDb<pParse->db->nDb );
-      destroyRootPage(pParse, iLargest, iDb);
-      iDestroyed = iLargest;
-    }
-  }
-#endif
+//     if( iDestroyed==0 || iTab<iDestroyed ){
+//       iLargest = iTab;
+//     }
+//     for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+//       int iIdx = pIdx->tnum;
+//       assert( pIdx->pSchema==pTab->pSchema );
+//       if( (iDestroyed==0 || (iIdx<iDestroyed)) && iIdx>iLargest ){
+//         iLargest = iIdx;
+//       }
+//     }
+//     if( iLargest==0 ){
+//       return;
+//     }else{
+//       int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
+//       assert( iDb>=0 && iDb<pParse->db->nDb );
+//       destroyRootPage(pParse, iLargest, iDb);
+//       iDestroyed = iLargest;
+//     }
+//   }
+// #endif
 }
 
 /*
@@ -2307,9 +2309,9 @@ void sqlite3CodeDropTable(Parse *pParse, Table *pTab, int iDb, int isView){
   ** created in the temp database that refers to a table in another
   ** database.
   */
-  sqlite3NestedParse(pParse, 
-      "DELETE FROM %Q.%s WHERE tbl_name=%Q and type!='trigger'",
-      pDb->zName, SCHEMA_TABLE(iDb), pTab->zName);
+  // sqlite3NestedParse(pParse, 
+  //     "DELETE FROM %Q.%s WHERE tbl_name=%Q and type!='trigger'",
+  //     pDb->zName, SCHEMA_TABLE(iDb), pTab->zName);
   if( !isView && !IsVirtual(pTab) ){
     destroyTable(pParse, pTab);
   }
@@ -2320,7 +2322,7 @@ void sqlite3CodeDropTable(Parse *pParse, Table *pTab, int iDb, int isView){
   if( IsVirtual(pTab) ){
     sqlite3VdbeAddOp4(v, OP_VDestroy, iDb, 0, 0, pTab->zName, 0);
   }
-  sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
+  //sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
   sqlite3ChangeCookie(pParse, iDb);
   sqliteViewResetAll(db, iDb);
 }
@@ -3282,11 +3284,11 @@ void sqlite3DropIndex(Parse *pParse, SrcList *pName, int ifExists){
     pParse->checkSchema = 1;
     goto exit_drop_index;
   }
-  if( pIndex->idxType!=SQLITE_IDXTYPE_APPDEF ){
-    sqlite3ErrorMsg(pParse, "index associated with UNIQUE "
-      "or PRIMARY KEY constraint cannot be dropped", 0);
-    goto exit_drop_index;
-  }
+  // if( pIndex->idxType!=SQLITE_IDXTYPE_APPDEF ){
+  //   sqlite3ErrorMsg(pParse, "index associated with UNIQUE "
+  //     "or PRIMARY KEY constraint cannot be dropped", 0);
+  //   goto exit_drop_index;
+  // }
   iDb = sqlite3SchemaToIndex(db, pIndex->pSchema);
 #ifndef SQLITE_OMIT_AUTHORIZATION
   {
@@ -3308,14 +3310,14 @@ void sqlite3DropIndex(Parse *pParse, SrcList *pName, int ifExists){
   v = sqlite3GetVdbe(pParse);
   if( v ){
     sqlite3BeginWriteOperation(pParse, 1, iDb);
-    sqlite3NestedParse(pParse,
-       "DELETE FROM %Q.%s WHERE name=%Q AND type='index'",
-       db->aDb[iDb].zName, SCHEMA_TABLE(iDb), pIndex->zName
-    );
+    // sqlite3NestedParse(pParse,
+    //    "DELETE FROM %Q.%s WHERE name=%Q AND type='index'",
+    //    db->aDb[iDb].zName, SCHEMA_TABLE(iDb), pIndex->zName
+    // );
     sqlite3ClearStatTables(pParse, iDb, "idx", pIndex->zName);
     sqlite3ChangeCookie(pParse, iDb);
     destroyRootPage(pParse, pIndex->tnum, iDb);
-    sqlite3VdbeAddOp4(v, OP_DropIndex, iDb, 0, 0, pIndex->zName, 0);
+    //sqlite3VdbeAddOp4(v, OP_DropIndex, iDb, 0, 0, pIndex->zName, 0);
   }
 
 exit_drop_index:
