@@ -2479,6 +2479,10 @@ static void freeTempSpace(BtShared *pBt){
 int sqlite3BtreeClose(Btree *p){
   BtShared *pBt = p->pBt;
   BtCursor *pCur;
+  Hash h;
+  HashElem *elem;
+  sqlite3 *db = p->db;
+  sql_tarantool_api *trn_api = &db->trn_api;
 
   /* Close all cursors opened via this handle.  */
   assert( sqlite3_mutex_held(p->db->mutex) );
@@ -2513,7 +2517,13 @@ int sqlite3BtreeClose(Btree *p){
     assert( !pBt->pCursor );
     sqlite3PagerClose(pBt->pPager);
     if( pBt->xFreeSchema && pBt->pSchema ){
+      Hash *idxHash = &((Schema *)pBt->pSchema)->idxHash;
+      for(elem=sqliteHashFirst(idxHash); elem; elem=sqliteHashNext(elem)){
+        SIndex *pData = sqliteHashData(elem);
+        trn_api->remove_and_free_sindex(trn_api->self, pData);
+      }
       pBt->xFreeSchema(pBt->pSchema);
+      
     }
     sqlite3DbFree(0, pBt->pSchema);
     freeTempSpace(pBt);

@@ -1841,6 +1841,7 @@ void sqlite3EndTable(
     trntl_nested_func *funcs = v->pNestedOps;
     NestedFuncContext *conts = v->pNestedConts;
     cnt = v->nNestedOps;
+    Table *table;
     if (cnt == 1) {
       v->nNestedOps = 2;
       cnt = 2;
@@ -1862,9 +1863,19 @@ void sqlite3EndTable(
     funcs[0] = trn_api->trntl_nested_insert_into_space;
     int argc = 3;
     void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+    sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
     argv[0] = trn_api->self;
     argv[1] = (void *)sqlite3DbStrDup(db, "_space");
-    argv[2] = (void *)make_deep_copy_Table(p, db);
+    sqlite3VdbeAppendNestedMemory(v, argv[1], db);
+    table = make_deep_copy_Table(p, db);
+    argv[2] = (void *)table;
+    sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
+    for (i = 0; i < table->nCol; ++i) {
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
+    }
     conts[0].argc = 3;
     conts[0].argv = (void *)argv;
 
@@ -3178,10 +3189,14 @@ SIndex *sqlite3CreateIndex(
 
     sql_tarantool_api *trn_api = &db->trn_api;
     v->nNestedOps = 1;
+    v->nested_memory = NULL;
+    v->nested_memory_cnt = 0;
     int nOps = v->nNestedOps;
     int last = nOps - 1;
     trntl_nested_func *funcs;
     struct NestedFuncContext *conts;
+    SIndex *index;
+
     funcs = sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * nOps);
     conts = sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * nOps);
     v->pNestedOps = funcs;
@@ -3189,9 +3204,16 @@ SIndex *sqlite3CreateIndex(
     funcs[last] = trn_api->trntl_nested_insert_into_space;
     int argc = 3;
     void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+    sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
     argv[0] = trn_api->self;
     argv[1] = (void *)sqlite3DbStrDup(db, "_index");
-    argv[2] = (void *)make_deep_copy_SIndex(pIndex, db);
+    sqlite3VdbeAppendNestedMemory(v, argv[1], db);
+    index = make_deep_copy_SIndex(pIndex, db);
+    argv[2] = (void *)index;
+    sqlite3VdbeAppendNestedMemory(v, argv[2], db);
+    for (i = 0; i < index->nColumn; ++i) {
+      sqlite3VdbeAppendNestedMemory(v, (void *)index->azColl[i], db);
+    }
     conts[last].argc = 3;
     conts[last].argv = (void *)argv;
     sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, last);

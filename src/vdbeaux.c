@@ -38,6 +38,23 @@ Vdbe *sqlite3VdbeCreate(Parse *pParse){
   return p;
 }
 
+void sqlite3VdbeAppendNestedMemory(Vdbe *p, void *mem, sqlite3 *db){
+  void **new_mem;
+  sqlite3 **new_args;
+
+  p->nested_memory_cnt++;
+  new_mem = sqlite3Malloc(sizeof(void *) * p->nested_memory_cnt);
+  new_args = sqlite3Malloc(sizeof(sqlite3 *) * p->nested_memory_cnt);
+  memcpy(new_mem, p->nested_memory, sizeof(void *) * (p->nested_memory_cnt - 1));
+  memcpy(new_args, p->free_args, sizeof(sqlite3 *) * (p->nested_memory_cnt - 1));
+  new_mem[p->nested_memory_cnt - 1] = mem;
+  new_args[p->nested_memory_cnt - 1] = db;
+  sqlite3_free(p->nested_memory);
+  sqlite3_free(p->free_args);
+  p->nested_memory = new_mem;
+  p->free_args = new_args;
+}
+
 /*
 ** Change the error string stored in Vdbe.zErrMsg
 */
@@ -2795,6 +2812,13 @@ void sqlite3VdbeClearObject(sqlite3 *db, Vdbe *p){
   }
   sqlite3DbFree(db, p->aScan);
 #endif
+  sqlite3DbFree(db, p->pNestedOps);
+  sqlite3DbFree(db, p->pNestedConts);
+  for (i = 0; i < p->nested_memory_cnt; ++i) {
+    sqlite3DbFree(p->free_args[i], p->nested_memory[i]);
+  }
+  sqlite3_free(p->free_args);
+  sqlite3_free(p->nested_memory);
 }
 
 /*

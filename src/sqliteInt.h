@@ -1177,6 +1177,8 @@ typedef struct sql_tarantool_api {
 
   int (*trntl_drop_table)(Btree *p, int iTable, int *piMoved);
 
+  void (*remove_and_free_sindex)(void *self, SIndex *index);
+
   sqlite3 *(*get_global_db)();
 
   void (*set_global_db)(sqlite3 *db);

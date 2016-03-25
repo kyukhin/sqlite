@@ -1065,7 +1065,7 @@ void sqlite3LeaveMutexAndCloseZombie(sqlite3 *db){
   ** any database schemas have been modified by an uncommitted transaction
   ** they are reset. And that the required b-tree mutex is held to make
   ** the pager rollback and schema reset an atomic operation. */
-  sqlite3RollbackAll(db, SQLITE_OK);
+  //sqlite3RollbackAll(db, SQLITE_OK);
 
   /* Free any outstanding Savepoint structures. */
   sqlite3CloseSavepoints(db);
