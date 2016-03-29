@@ -1189,6 +1189,7 @@ typedef int (*trntl_nested_func)(int, void *);
 typedef struct NestedFuncContext {
   int argc;
   void *argv;
+  const char *id;
 } NestedFuncContext;
 
 extern sql_tarantool_api global_trn_api;

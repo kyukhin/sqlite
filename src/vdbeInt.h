@@ -411,7 +411,11 @@ struct Vdbe {
 /*
 ** Function prototypes
 */
+int sqlite3VdbeNestedCallbackByID(
+  Vdbe *, const char *, trntl_nested_func *,
+  int *, void ***);
 void sqlite3VdbeAppendNestedMemory(Vdbe *, void *, sqlite3 *);
+void sqlite3VdbeAppendNestedCallback(Vdbe *, trntl_nested_func, int, void **, const char *);
 void sqlite3VdbeError(Vdbe*, const char *, ...);
 void sqlite3VdbeFreeCursor(Vdbe *, VdbeCursor*);
 void sqliteVdbePopStack(Vdbe*,int);
