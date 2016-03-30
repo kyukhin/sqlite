@@ -1773,8 +1773,9 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
-  tabOpts |= TF_WithoutRowid;
+  
   int cnt, i;
+  sql_tarantool_api *trn_api = &db->trn_api;
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -1783,6 +1784,9 @@ void sqlite3EndTable(
   p = pParse->pNewTable;
   if( p==0 ) return;
 
+  char fcreate_table = (p->pSelect == 0);
+  if (fcreate_table) tabOpts |= TF_WithoutRowid;
+  
   assert( !db->init.busy || !pSelect );
 
   /* If the db->init.busy is 1 it means we are reading the SQL off the
@@ -1826,6 +1830,7 @@ void sqlite3EndTable(
     estimateIndexWidth(pIdx);
   }
 
+
   Vdbe *v;
   v = sqlite3GetVdbe(pParse);
   if( NEVER(v==0) ) return;
@@ -1837,41 +1842,61 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
-    sql_tarantool_api *trn_api = &db->trn_api;
-    trntl_nested_func *funcs = v->pNestedOps;
-    NestedFuncContext *conts = v->pNestedConts;
-    cnt = v->nNestedOps;
-    if (cnt == 1) {
-      v->nNestedOps = 2;
-      cnt = 2;
-      //only index is now creating
-      //we need to add new callback
-      trntl_nested_func *new_funcs =
-        sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
-      NestedFuncContext *new_conts =
-        sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
-      new_funcs[1] = funcs[0];
-      new_conts[1] = conts[0];
-      sqlite3DbFree(db, funcs);
-      sqlite3DbFree(db, conts);
-      funcs = new_funcs;
-      conts = new_conts;
-      v->pNestedOps = funcs;
-      v->pNestedConts = conts;
+
+    if (fcreate_table) { //create table
+      trntl_nested_func *funcs = v->pNestedOps;
+      NestedFuncContext *conts = v->pNestedConts;
+      cnt = v->nNestedOps;
+      if (cnt == 1) {
+        v->nNestedOps = 2;
+        cnt = 2;
+        //only index is now creating
+        //we need to add new callback
+        trntl_nested_func *new_funcs =
+          sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
+        NestedFuncContext *new_conts =
+          sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
+        new_funcs[1] = funcs[0];
+        new_conts[1] = conts[0];
+        sqlite3DbFree(db, funcs);
+        sqlite3DbFree(db, conts);
+        funcs = new_funcs;
+        conts = new_conts;
+        v->pNestedOps = funcs;
+        v->pNestedConts = conts;
+      }
+      funcs[0] = trn_api->trntl_nested_insert_into_space;
+      int argc = 3;
+      void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+      argv[0] = trn_api->self;
+      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+      argv[2] = (void *)make_deep_copy_Table(p, db);
+      conts[0].argc = 3;
+      conts[0].argv = (void *)argv;
+
+      void **index_argv = (void **)conts[1].argv;
+      ((SIndex *)index_argv[2])->pTable = (Table *)argv[2];
+
+      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 1); //exec inserting into _index
+    } else {
+      cnt = 1;
+      v->nNestedOps = cnt;
+      v->pNestedOps =  sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
+      v->pNestedConts =  sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
+      
+      trntl_nested_func *funcs = v->pNestedOps;
+      NestedFuncContext *conts = v->pNestedConts;
+
+      funcs[0] = trn_api->trntl_nested_insert_into_space;
+      int argc = 3;
+      void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+      argv[0] = trn_api->self;
+      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+      argv[2] = (void *)make_deep_copy_Table(p, db);
+      conts[0].argc = argc;
+      conts[0].argv = (void *)argv;
+      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 0);
     }
-    funcs[0] = trn_api->trntl_nested_insert_into_space;
-    int argc = 3;
-    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
-    argv[0] = trn_api->self;
-    argv[1] = (void *)sqlite3DbStrDup(db, "_space");
-    argv[2] = (void *)make_deep_copy_Table(p, db);
-    conts[0].argc = 3;
-    conts[0].argv = (void *)argv;
-
-    void **index_argv = (void **)conts[1].argv;
-    ((SIndex *)index_argv[2])->pTable = (Table *)argv[2];
-
-    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 1); //exec inserting into _index
   }
 
 
