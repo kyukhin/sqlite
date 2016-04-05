@@ -394,6 +394,10 @@ struct Vdbe {
   int nNestedOps;
   trntl_nested_func *pNestedOps;
   NestedFuncContext *pNestedConts;
+
+  void **nested_memory;
+  sqlite3 **free_args;
+  int nested_memory_cnt;
 };
 
 /*
@@ -407,6 +411,11 @@ struct Vdbe {
 /*
 ** Function prototypes
 */
+int sqlite3VdbeNestedCallbackByID(
+  Vdbe *, const char *, trntl_nested_func *,
+  int *, void ***);
+void sqlite3VdbeAppendNestedMemory(Vdbe *, void *, sqlite3 *);
+void sqlite3VdbeAppendNestedCallback(Vdbe *, trntl_nested_func, int, void **, const char *);
 void sqlite3VdbeError(Vdbe*, const char *, ...);
 void sqlite3VdbeFreeCursor(Vdbe *, VdbeCursor*);
 void sqliteVdbePopStack(Vdbe*,int);

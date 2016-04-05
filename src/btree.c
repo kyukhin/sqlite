@@ -2479,6 +2479,10 @@ static void freeTempSpace(BtShared *pBt){
 int sqlite3BtreeClose(Btree *p){
   BtShared *pBt = p->pBt;
   BtCursor *pCur;
+  Hash h;
+  HashElem *elem;
+  sqlite3 *db = p->db;
+  sql_tarantool_api *trn_api = &db->trn_api;
 
   /* Close all cursors opened via this handle.  */
   assert( sqlite3_mutex_held(p->db->mutex) );
@@ -2513,7 +2517,13 @@ int sqlite3BtreeClose(Btree *p){
     assert( !pBt->pCursor );
     sqlite3PagerClose(pBt->pPager);
     if( pBt->xFreeSchema && pBt->pSchema ){
+      Hash *idxHash = &((Schema *)pBt->pSchema)->idxHash;
+      for(elem=sqliteHashFirst(idxHash); elem; elem=sqliteHashNext(elem)){
+        SIndex *pData = sqliteHashData(elem);
+        trn_api->remove_and_free_sindex(trn_api->self, pData);
+      }
       pBt->xFreeSchema(pBt->pSchema);
+      
     }
     sqlite3DbFree(0, pBt->pSchema);
     freeTempSpace(pBt);
@@ -8677,9 +8687,14 @@ static int btreeDropTable(Btree *p, Pgno iTable, int *piMoved){
 }
 int sqlite3BtreeDropTable(Btree *p, int iTable, int *piMoved){
   int rc;
-  sqlite3BtreeEnter(p);
-  rc = btreeDropTable(p, iTable, piMoved);
-  sqlite3BtreeLeave(p);
+  sql_tarantool_api *trn_api = &p->db->trn_api;
+  if (trn_api->check_num_on_tarantool_id(trn_api->self, iTable)) {
+    rc = trn_api->trntl_drop_table(p, iTable, piMoved);
+  } else {
+    sqlite3BtreeEnter(p);
+    rc = btreeDropTable(p, iTable, piMoved);
+    sqlite3BtreeLeave(p);
+  }
   return rc;
 }
 

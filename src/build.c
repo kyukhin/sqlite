@@ -1773,7 +1773,7 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
-  
+
   int cnt, i;
   sql_tarantool_api *trn_api = &db->trn_api;
 
@@ -1842,48 +1842,60 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
+	sql_tarantool_api *trn_api = &db->trn_api;
+	if (fcreate_table) { //create table
+		Table *table;
+		SIndex *index;
+		int creating_index_aOp;
+		int creating_index_nested;
 
-    if (fcreate_table) { //create table
-      trntl_nested_func *funcs = v->pNestedOps;
-      NestedFuncContext *conts = v->pNestedConts;
-      cnt = v->nNestedOps;
-      if (cnt == 1) {
-        v->nNestedOps = 2;
-        cnt = 2;
-        //only index is now creating
-        //we need to add new callback
-        trntl_nested_func *new_funcs =
-          sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
-        NestedFuncContext *new_conts =
-          sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
-        new_funcs[1] = funcs[0];
-        new_conts[1] = conts[0];
-        sqlite3DbFree(db, funcs);
-        sqlite3DbFree(db, conts);
-        funcs = new_funcs;
-        conts = new_conts;
-        v->pNestedOps = funcs;
-        v->pNestedConts = conts;
-      }
-      funcs[0] = trn_api->trntl_nested_insert_into_space;
-      int argc = 3;
-      void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
-      argv[0] = trn_api->self;
-      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
-      argv[2] = (void *)make_deep_copy_Table(p, db);
-      conts[0].argc = 3;
-      conts[0].argv = (void *)argv;
+		//allocate argv array and push it on memory stack
+		void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * 3);
+		sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
 
-      void **index_argv = (void **)conts[1].argv;
-      ((SIndex *)index_argv[2])->pTable = (Table *)argv[2];
+		argv[0] = trn_api->self;
 
-      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 1); //exec inserting into _index
+		//allocate argv[1] and push it on memory stack for further freeing
+		argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+		sqlite3VdbeAppendNestedMemory(v, argv[1], db);
+
+		//allocate argv[2] and push on memory stack it and its dynamically allocated
+		//members (look make_deep_copy_Table)
+		table = make_deep_copy_Table(p, db);
+		argv[2] = (void *)table;
+		sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
+		sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+		sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
+		for (i = 0; i < table->nCol; ++i) {
+		  sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
+		  sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
+		}
+
+		sqlite3VdbeAppendNestedCallback(v, trn_api->trntl_nested_insert_into_space,
+		  3, argv, "creating space");
+
+		//here we get creating index argv into argv variable
+		creating_index_nested = sqlite3VdbeNestedCallbackByID(v, "creating index", 0, 0, &argv);
+		if (creating_index_nested < 0) {
+		  sqlite3ErrorMsg(pParse,
+		      "Index must be created with table");
+		  return;
+		}
+	//here we get in tmp index of creating index in aOp array
+	creating_index_aOp = sqlite3VdbeOpIndexByID(v, "creating index");
+	index = (SIndex *)argv[2];
+	index->pTable = table;
+	//now vdbe aOp contains index creating and then space creating. We
+	//need to swap them. For this we find index creating Op and change
+	//its index to last callback which is i
+	v->aOp[creating_index_aOp].p1 = v->nNestedOps - 1;
+	sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, creating_index_nested); //exec inserting into _index
     } else {
       cnt = 1;
       v->nNestedOps = cnt;
       v->pNestedOps =  sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
       v->pNestedConts =  sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
-      
+
       trntl_nested_func *funcs = v->pNestedOps;
       NestedFuncContext *conts = v->pNestedConts;
 
@@ -2189,9 +2201,9 @@ static void destroyRootPage(Parse *pParse, int iTable, int iDb){
   ** is in register NNN.  See grammar rules associated with the TK_REGISTER
   ** token for additional information.
   */
-  sqlite3NestedParse(pParse, 
-     "UPDATE %Q.%s SET rootpage=%d WHERE #%d AND rootpage=#%d",
-     pParse->db->aDb[iDb].zName, SCHEMA_TABLE(iDb), iTable, r1, r1);
+  // sqlite3NestedParse(pParse, 
+  //    "UPDATE %Q.%s SET rootpage=%d WHERE #%d AND rootpage=#%d",
+  //    pParse->db->aDb[iDb].zName, SCHEMA_TABLE(iDb), iTable, r1, r1);
 #endif
   sqlite3ReleaseTempReg(pParse, r1);
 }
@@ -2203,14 +2215,16 @@ static void destroyRootPage(Parse *pParse, int iTable, int iDb){
 ** is also added (this can happen with an auto-vacuum database).
 */
 static void destroyTable(Parse *pParse, Table *pTab){
-#ifdef SQLITE_OMIT_AUTOVACUUM
-  Index *pIdx;
   int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
   destroyRootPage(pParse, pTab->tnum, iDb);
-  for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-    destroyRootPage(pParse, pIdx->tnum, iDb);
-  }
-#else
+// #ifdef SQLITE_OMIT_AUTOVACUUM
+//   Index *pIdx;
+//   int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
+//   destroyRootPage(pParse, pTab->tnum, iDb);
+//   for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+//     destroyRootPage(pParse, pIdx->tnum, iDb);
+//   }
+// #else
   /* If the database may be auto-vacuum capable (if SQLITE_OMIT_AUTOVACUUM
   ** is not defined), then it is important to call OP_Destroy on the
   ** table and index root-pages in order, starting with the numerically 
@@ -2227,33 +2241,33 @@ static void destroyTable(Parse *pParse, Table *pTab){
   ** "OP_Destroy 4 0" opcode. The subsequent "OP_Destroy 5 0" would hit
   ** a free-list page.
   */
-  int iTab = pTab->tnum;
-  int iDestroyed = 0;
+//   int iTab = pTab->tnum;
+//   int iDestroyed = 0;
 
-  while( 1 ){
-    SIndex *pIdx;
-    int iLargest = 0;
+//   while( 1 ){
+//     SIndex *pIdx;
+//     int iLargest = 0;
 
-    if( iDestroyed==0 || iTab<iDestroyed ){
-      iLargest = iTab;
-    }
-    for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-      int iIdx = pIdx->tnum;
-      assert( pIdx->pSchema==pTab->pSchema );
-      if( (iDestroyed==0 || (iIdx<iDestroyed)) && iIdx>iLargest ){
-        iLargest = iIdx;
-      }
-    }
-    if( iLargest==0 ){
-      return;
-    }else{
-      int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
-      assert( iDb>=0 && iDb<pParse->db->nDb );
-      destroyRootPage(pParse, iLargest, iDb);
-      iDestroyed = iLargest;
-    }
-  }
-#endif
+//     if( iDestroyed==0 || iTab<iDestroyed ){
+//       iLargest = iTab;
+//     }
+//     for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+//       int iIdx = pIdx->tnum;
+//       assert( pIdx->pSchema==pTab->pSchema );
+//       if( (iDestroyed==0 || (iIdx<iDestroyed)) && iIdx>iLargest ){
+//         iLargest = iIdx;
+//       }
+//     }
+//     if( iLargest==0 ){
+//       return;
+//     }else{
+//       int iDb = sqlite3SchemaToIndex(pParse->db, pTab->pSchema);
+//       assert( iDb>=0 && iDb<pParse->db->nDb );
+//       destroyRootPage(pParse, iLargest, iDb);
+//       iDestroyed = iLargest;
+//     }
+//   }
+// #endif
 }
 
 /*
@@ -2332,9 +2346,9 @@ void sqlite3CodeDropTable(Parse *pParse, Table *pTab, int iDb, int isView){
   ** created in the temp database that refers to a table in another
   ** database.
   */
-  sqlite3NestedParse(pParse, 
-      "DELETE FROM %Q.%s WHERE tbl_name=%Q and type!='trigger'",
-      pDb->zName, SCHEMA_TABLE(iDb), pTab->zName);
+  // sqlite3NestedParse(pParse, 
+  //     "DELETE FROM %Q.%s WHERE tbl_name=%Q and type!='trigger'",
+  //     pDb->zName, SCHEMA_TABLE(iDb), pTab->zName);
   if( !isView && !IsVirtual(pTab) ){
     destroyTable(pParse, pTab);
   }
@@ -2345,7 +2359,7 @@ void sqlite3CodeDropTable(Parse *pParse, Table *pTab, int iDb, int isView){
   if( IsVirtual(pTab) ){
     sqlite3VdbeAddOp4(v, OP_VDestroy, iDb, 0, 0, pTab->zName, 0);
   }
-  sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
+  //sqlite3VdbeAddOp4(v, OP_DropTable, iDb, 0, 0, pTab->zName, 0);
   sqlite3ChangeCookie(pParse, iDb);
   sqliteViewResetAll(db, iDb);
 }
@@ -3200,24 +3214,31 @@ SIndex *sqlite3CreateIndex(
     if( v==0 ) goto exit_create_index;
 
     sql_tarantool_api *trn_api = &db->trn_api;
-    v->nNestedOps = 1;
-    int nOps = v->nNestedOps;
-    int last = nOps - 1;
-    trntl_nested_func *funcs;
-    struct NestedFuncContext *conts;
-    funcs = sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * nOps);
-    conts = sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * nOps);
-    v->pNestedOps = funcs;
-    v->pNestedConts = conts;
-    funcs[last] = trn_api->trntl_nested_insert_into_space;
-    int argc = 3;
-    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+    SIndex *index;
+
+    //allocate argv array
+    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * 3);
+    //and push it on top of memory stack
+    sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
+
     argv[0] = trn_api->self;
+
+    //allocate argv[1] and also push its memory on stack
     argv[1] = (void *)sqlite3DbStrDup(db, "_index");
-    argv[2] = (void *)make_deep_copy_SIndex(pIndex, db);
-    conts[last].argc = 3;
-    conts[last].argv = (void *)argv;
-    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, last);
+    sqlite3VdbeAppendNestedMemory(v, argv[1], db);
+
+    //allocate argv[2] and first push itself on stack then
+    //push its dynamically allocated members (look make_deep_copy_SIndex impl)
+    index = make_deep_copy_SIndex(pIndex, db);
+    argv[2] = (void *)index;
+    sqlite3VdbeAppendNestedMemory(v, argv[2], db);
+    for (i = 0; i < index->nColumn; ++i) {
+      sqlite3VdbeAppendNestedMemory(v, (void *)index->azColl[i], db);
+    }
+
+    sqlite3VdbeAppendNestedCallback(v, trn_api->trntl_nested_insert_into_space,
+      3, argv, "creating index");
+    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, v->nNestedOps - 1);
   }
 
   pRet = pIndex;
@@ -3307,11 +3328,11 @@ void sqlite3DropIndex(Parse *pParse, SrcList *pName, int ifExists){
     pParse->checkSchema = 1;
     goto exit_drop_index;
   }
-  if( pIndex->idxType!=SQLITE_IDXTYPE_APPDEF ){
-    sqlite3ErrorMsg(pParse, "index associated with UNIQUE "
-      "or PRIMARY KEY constraint cannot be dropped", 0);
-    goto exit_drop_index;
-  }
+  // if( pIndex->idxType!=SQLITE_IDXTYPE_APPDEF ){
+  //   sqlite3ErrorMsg(pParse, "index associated with UNIQUE "
+  //     "or PRIMARY KEY constraint cannot be dropped", 0);
+  //   goto exit_drop_index;
+  // }
   iDb = sqlite3SchemaToIndex(db, pIndex->pSchema);
 #ifndef SQLITE_OMIT_AUTHORIZATION
   {
@@ -3333,14 +3354,14 @@ void sqlite3DropIndex(Parse *pParse, SrcList *pName, int ifExists){
   v = sqlite3GetVdbe(pParse);
   if( v ){
     sqlite3BeginWriteOperation(pParse, 1, iDb);
-    sqlite3NestedParse(pParse,
-       "DELETE FROM %Q.%s WHERE name=%Q AND type='index'",
-       db->aDb[iDb].zName, SCHEMA_TABLE(iDb), pIndex->zName
-    );
+    // sqlite3NestedParse(pParse,
+    //    "DELETE FROM %Q.%s WHERE name=%Q AND type='index'",
+    //    db->aDb[iDb].zName, SCHEMA_TABLE(iDb), pIndex->zName
+    // );
     sqlite3ClearStatTables(pParse, iDb, "idx", pIndex->zName);
     sqlite3ChangeCookie(pParse, iDb);
     destroyRootPage(pParse, pIndex->tnum, iDb);
-    sqlite3VdbeAddOp4(v, OP_DropIndex, iDb, 0, 0, pIndex->zName, 0);
+    //sqlite3VdbeAddOp4(v, OP_DropIndex, iDb, 0, 0, pIndex->zName, 0);
   }
 
 exit_drop_index:

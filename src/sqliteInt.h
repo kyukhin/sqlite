@@ -1175,6 +1175,10 @@ typedef struct sql_tarantool_api {
 
   int (*trntl_nested_insert_into_space)(int argc, void *argv);
 
+  int (*trntl_drop_table)(Btree *p, int iTable, int *piMoved);
+
+  void (*remove_and_free_sindex)(void *self, SIndex *index);
+
   sqlite3 *(*get_global_db)();
 
   void (*set_global_db)(sqlite3 *db);
@@ -1187,6 +1191,7 @@ typedef int (*trntl_nested_func)(int, void *);
 typedef struct NestedFuncContext {
   int argc;
   void *argv;
+  const char *id;
 } NestedFuncContext;
 
 extern sql_tarantool_api global_trn_api;
