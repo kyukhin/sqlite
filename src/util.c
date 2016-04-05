@@ -85,7 +85,9 @@ Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
   res->nRowLogEst = src->nRowLogEst;
   res->szTabRow = src->szTabRow;
   res->nCol = src->nCol;
-  res->aCol = (Column *)sqlite3DbMallocZero(db, sizeof(Column) * res->nCol);
+  if (res->nCol) {
+    res->aCol = (Column *)sqlite3DbMallocZero(db, sizeof(Column) * res->nCol);
+  }
   if (db->mallocFailed) {
     sqlite3_free(res);
     return NULL;

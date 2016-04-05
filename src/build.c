@@ -1773,8 +1773,9 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
-  tabOpts |= TF_WithoutRowid;
+  
   int cnt, i;
+  sql_tarantool_api *trn_api = &db->trn_api;
 
   if( pEnd==0 && pSelect==0 ){
     return;
@@ -1783,6 +1784,9 @@ void sqlite3EndTable(
   p = pParse->pNewTable;
   if( p==0 ) return;
 
+  char fcreate_table = (p->pSelect == 0);
+  if (fcreate_table) tabOpts |= TF_WithoutRowid;
+  
   assert( !db->init.busy || !pSelect );
 
   /* If the db->init.busy is 1 it means we are reading the SQL off the
@@ -1826,6 +1830,7 @@ void sqlite3EndTable(
     estimateIndexWidth(pIdx);
   }
 
+
   Vdbe *v;
   v = sqlite3GetVdbe(pParse);
   if( NEVER(v==0) ) return;
@@ -1837,53 +1842,73 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
-    sql_tarantool_api *trn_api = &db->trn_api;
-    Table *table;
-    SIndex *index;
-    int creating_index_aOp;
-    int creating_index_nested;
+    if (fcreate_table) { //create table
+      sql_tarantool_api *trn_api = &db->trn_api;
+      Table *table;
+      SIndex *index;
+      int creating_index_aOp;
+      int creating_index_nested;
 
-    //allocate argv array and push it on memory stack
-    void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * 3);
-    sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
+      //allocate argv array and push it on memory stack
+      void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * 3);
+      sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
 
-    argv[0] = trn_api->self;
-    
-    //allocate argv[1] and push it on memory stack for further freeing
-    argv[1] = (void *)sqlite3DbStrDup(db, "_space");
-    sqlite3VdbeAppendNestedMemory(v, argv[1], db);
+      argv[0] = trn_api->self;
+      
+      //allocate argv[1] and push it on memory stack for further freeing
+      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+      sqlite3VdbeAppendNestedMemory(v, argv[1], db);
 
-    //allocate argv[2] and push on memory stack it and its dynamically allocated
-    //members (look make_deep_copy_Table)
-    table = make_deep_copy_Table(p, db);
-    argv[2] = (void *)table;
-    sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
-    sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
-    sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
-    for (i = 0; i < table->nCol; ++i) {
-      sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
-      sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
+      //allocate argv[2] and push on memory stack it and its dynamically allocated
+      //members (look make_deep_copy_Table)
+      table = make_deep_copy_Table(p, db);
+      argv[2] = (void *)table;
+      sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
+      for (i = 0; i < table->nCol; ++i) {
+        sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
+        sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
+      }
+
+      sqlite3VdbeAppendNestedCallback(v, trn_api->trntl_nested_insert_into_space,
+        3, argv, "creating space");
+
+      //here we get creating index argv into argv variable
+      creating_index_nested = sqlite3VdbeNestedCallbackByID(v, "creating index", 0, 0, &argv);
+      if (creating_index_nested < 0) {
+        sqlite3ErrorMsg(pParse,
+            "Index must be created with table");
+        return;
+      }
+      //here we get in tmp index of creating index in aOp array
+      creating_index_aOp = sqlite3VdbeOpIndexByID(v, "creating index");
+      index = (SIndex *)argv[2];
+      index->pTable = table;
+      //now vdbe aOp contains index creating and then space creating. We
+      //need to swap them. For this we find index creating Op and change
+      //its index to last callback which is i
+      v->aOp[creating_index_aOp].p1 = v->nNestedOps - 1;
+      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, creating_index_nested); //exec inserting into _index
+    } else {
+      cnt = 1;
+      v->nNestedOps = cnt;
+      v->pNestedOps =  sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
+      v->pNestedConts =  sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
+      
+      trntl_nested_func *funcs = v->pNestedOps;
+      NestedFuncContext *conts = v->pNestedConts;
+
+      funcs[0] = trn_api->trntl_nested_insert_into_space;
+      int argc = 3;
+      void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+      argv[0] = trn_api->self;
+      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+      argv[2] = (void *)make_deep_copy_Table(p, db);
+      conts[0].argc = argc;
+      conts[0].argv = (void *)argv;
+      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 0);
     }
-
-    sqlite3VdbeAppendNestedCallback(v, trn_api->trntl_nested_insert_into_space,
-      3, argv, "creating space");
-
-    //here we get creating index argv into argv variable
-    creating_index_nested = sqlite3VdbeNestedCallbackByID(v, "creating index", 0, 0, &argv);
-    if (creating_index_nested < 0) {
-      sqlite3ErrorMsg(pParse,
-          "Index must be created with table");
-      return;
-    }
-    //here we get in tmp index of creating index in aOp array
-    creating_index_aOp = sqlite3VdbeOpIndexByID(v, "creating index");
-    index = (SIndex *)argv[2];
-    index->pTable = table;
-    //now vdbe aOp contains index creating and then space creating. We
-    //need to swap them. For this we find index creating Op and change
-    //its index to last callback which is i
-    v->aOp[creating_index_aOp].p1 = v->nNestedOps - 1;
-    sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, creating_index_nested); //exec inserting into _index
   }
 
 

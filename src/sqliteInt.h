@@ -1182,6 +1182,8 @@ typedef struct sql_tarantool_api {
   sqlite3 *(*get_global_db)();
 
   void (*set_global_db)(sqlite3 *db);
+
+  void (*space_truncate_by_id)(int space_id);
 } sql_tarantool_api;
 
 typedef int (*trntl_nested_func)(int, void *);

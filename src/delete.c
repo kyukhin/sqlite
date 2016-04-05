@@ -364,7 +364,7 @@ void sqlite3DeleteFrom(
   ** It is easier just to erase the whole table. Prior to version 3.6.5,
   ** this optimization caused the row change count (the value returned by 
   ** API function sqlite3_count_changes) to be set incorrectly.  */
-  if( rcauth==SQLITE_OK
+   if( rcauth==SQLITE_OK
    && pWhere==0
    && !bComplex
    && !IsVirtual(pTab)
@@ -375,9 +375,16 @@ void sqlite3DeleteFrom(
       sqlite3VdbeAddOp4(v, OP_Clear, pTab->tnum, iDb, memCnt,
                         pTab->zName, P4_STATIC);
     }
-    for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
-      assert( pIdx->pSchema==pTab->pSchema );
-      sqlite3VdbeAddOp2(v, OP_Clear, pIdx->tnum, iDb);
+    if (!is_tarantool) {
+      for(pIdx=pTab->pIndex; pIdx; pIdx=pIdx->pNext){
+        assert( pIdx->pSchema==pTab->pSchema );
+        sqlite3VdbeAddOp2(v, OP_Clear, pIdx->tnum, iDb);
+      }
+    }
+    else {
+      /* we need truncate any one index */
+      // TODO
+      sqlite3VdbeAddOp2(v, OP_Clear, pTab->pIndex->tnum, iDb);
     }
   }else
 #endif /* SQLITE_OMIT_TRUNCATE_OPTIMIZATION */
