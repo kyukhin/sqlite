@@ -1831,7 +1831,11 @@ void sqlite3EndTable(
   }
 
 
+  int n;
   Vdbe *v;
+  char *zType;    /* "view" or "table" */
+  char *zType2;   /* "VIEW" or "TABLE" */
+  char *zStmt;    /* Text of the CREATE TABLE or CREATE VIEW statement */
   v = sqlite3GetVdbe(pParse);
   if( NEVER(v==0) ) return;
 
@@ -1842,6 +1846,33 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
+    /* 
+    ** Initialize zType for the new view or table.
+    */
+    if( p->pSelect==0 ){
+      /* A regular table */
+      zType = "table";
+      zType2 = "TABLE";
+#ifndef SQLITE_OMIT_VIEW
+    }else{
+      /* A view */
+      zType = "view";
+      zType2 = "VIEW";
+#endif
+    }
+
+    /* Compute the complete text of the CREATE statement */
+    if( pSelect ){
+      zStmt = createTableStmt(db, p);
+    }else{
+      Token *pEnd2 = tabOpts ? &pParse->sLastToken : pEnd;
+      n = (int)(pEnd2->z - pParse->sNameToken.z);
+      if( pEnd2->z[0]!=';' ) n += pEnd2->n;
+      zStmt = sqlite3MPrintf(db, 
+          "CREATE %s %.*s", zType2, n, pParse->sNameToken.z
+      );
+    }
+
     sql_tarantool_api *trn_api = &db->trn_api;
     Table *table;
     if (fcreate_table) { //create table
@@ -1897,19 +1928,26 @@ void sqlite3EndTable(
       int creating_view_nested;
       cnt = 1;
 
-      int argc = 3;
+      int argc = 4;
       void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
       sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
 
       argv[0] = trn_api->self;
-      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
+      argv[1] = (void *)sqlite3DbStrDup(db, "_view");
       sqlite3VdbeAppendNestedMemory(v, (void *)argv[1], db);
 
       table = make_deep_copy_Table(p, db);
-      argv[2] = (void *)make_deep_copy_Table(p, db);
+      argv[2] = (void *)table;
+
 
       sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
       sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+      //TODO: fix leak here
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->pSelect, db);
+
+      argv[3] = (void *)sqlite3DbStrDup(db, zStmt);
+      sqlite3VdbeAppendNestedMemory(v, (void *)argv[3], db);
+
       //table->nCol is equal 0 for view, hence we do not have to free table->aCol
 
 
