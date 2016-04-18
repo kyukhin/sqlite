@@ -8785,6 +8785,10 @@ int sqlite3BtreeUpdateMeta(Btree *p, int idx, u32 iMeta){
 int sqlite3BtreeCount(BtCursor *pCur, i64 *pnEntry){
   i64 nEntry = 0;                      /* Value to return in *pnEntry */
   int rc;                              /* Return code */
+  sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+  if (pCur->is_tarantool) {
+    return trn_api->trntl_cursor_count(trn_api->self, pCur, pnEntry);
+  }
 
   if( pCur->pgnoRoot==0 ){
     *pnEntry = 0;

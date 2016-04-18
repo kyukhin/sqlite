@@ -1165,6 +1165,8 @@ typedef struct sql_tarantool_api {
 
   int (*trntl_cursor_close)(void *self, BtCursor *pCur);
 
+  int (*trntl_cursor_count)(void *self, BtCursor *pCur, i64 *pnEntry);
+
   char (*check_num_on_tarantool_id)(void *self, u32 num);
 
   int (*trntl_cursor_move_to_unpacked)(void *self, BtCursor *pCur, UnpackedRecord *pIdxKey, i64 intKey, int biasRight, int *pRes, RecordCompare xRecordCompare);

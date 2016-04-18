@@ -1275,16 +1275,7 @@ void sqlite3AddPrimaryKey(
       }
     }
   }
-  if( nTerm==1
-   && zType && sqlite3StrICmp(zType, "INTEGER")==0
-   && sortOrder!=SQLITE_SO_DESC
-  ){
-    pTab->iPKey = iCol;
-    pTab->keyConf = (u8)onError;
-    assert( autoInc==0 || autoInc==1 );
-    pTab->tabFlags |= autoInc*TF_Autoincrement;
-    if( pList ) pParse->iPkSortOrder = pList->a[0].sortOrder;
-  }else if( autoInc ){
+  if( autoInc ){
 #ifndef SQLITE_OMIT_AUTOINCREMENT
     sqlite3ErrorMsg(pParse, "AUTOINCREMENT is only allowed on an "
        "INTEGER PRIMARY KEY");
