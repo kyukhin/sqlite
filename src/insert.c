@@ -566,23 +566,6 @@ void sqlite3Insert(
   if( pParse->nested==0 ) sqlite3VdbeCountChanges(v);
   sqlite3BeginWriteOperation(pParse, pSelect || pTrigger, iDb);
 
-#ifndef SQLITE_OMIT_XFER_OPT
-  /* If the statement is of the form
-  **
-  **       INSERT INTO <table1> SELECT * FROM <table2>;
-  **
-  ** Then special optimizations can be applied that make the transfer
-  ** very fast and which reduce fragmentation of indices.
-  **
-  ** This is the 2nd template.
-  */
-  if( pColumn==0 && xferOptimization(pParse, pTab, pSelect, onError, iDb) ){
-    assert( !pTrigger );
-    assert( pList==0 );
-    goto insert_end;
-  }
-#endif /* SQLITE_OMIT_XFER_OPT */
-
   /* If this is an AUTOINCREMENT table, look up the sequence number in the
   ** sqlite_sequence table and store it in memory cell regAutoinc.
   */

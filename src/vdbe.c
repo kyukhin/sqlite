@@ -3957,8 +3957,12 @@ case OP_Found: {        /* jump, in3 */
         break;
       }
     }
+    // If it is NoConflict then skip checking
+    res = -1;
+    rc = SQLITE_OK;
+  } else {
+    rc = sqlite3BtreeMovetoUnpacked(pC->pCursor, pIdxKey, 0, 0, &res);
   }
-  rc = sqlite3BtreeMovetoUnpacked(pC->pCursor, pIdxKey, 0, 0, &res);
   sqlite3DbFree(db, pFree);
   if( rc!=SQLITE_OK ){
     break;

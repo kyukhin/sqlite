@@ -1275,16 +1275,7 @@ void sqlite3AddPrimaryKey(
       }
     }
   }
-  if( nTerm==1
-   && zType && sqlite3StrICmp(zType, "INTEGER")==0
-   && sortOrder!=SQLITE_SO_DESC
-  ){
-    pTab->iPKey = iCol;
-    pTab->keyConf = (u8)onError;
-    assert( autoInc==0 || autoInc==1 );
-    pTab->tabFlags |= autoInc*TF_Autoincrement;
-    if( pList ) pParse->iPkSortOrder = pList->a[0].sortOrder;
-  }else if( autoInc ){
+  if( autoInc ){
 #ifndef SQLITE_OMIT_AUTOINCREMENT
     sqlite3ErrorMsg(pParse, "AUTOINCREMENT is only allowed on an "
        "INTEGER PRIMARY KEY");
@@ -2856,6 +2847,7 @@ SIndex *sqlite3CreateIndex(
   int nExtraCol;                   /* Number of extra columns needed */
   char *zExtra = 0;                /* Extra space after the Index object */
   SIndex *pPk = 0;      /* PRIMARY KEY index for WITHOUT ROWID tables */
+  char fcreate_table = 0;
 
   if( db->mallocFailed || IN_DECLARE_VTAB || pParse->nErr>0 ){
     goto exit_create_index;
@@ -2915,6 +2907,7 @@ SIndex *sqlite3CreateIndex(
     iDb = sqlite3SchemaToIndex(db, pTab->pSchema);
   }
   pDb = &db->aDb[iDb];
+  fcreate_table = (pTab->pIndex == 0);
 
   assert( pTab!=0 );
   assert( pParse->nErr==0 );
@@ -3289,10 +3282,12 @@ SIndex *sqlite3CreateIndex(
   }
 
   pRet = pIndex;
-  if (pTab->pIndex) {
-    pIndex->pNext = pTab->pIndex;
+  if (fcreate_table) {
+    if (pTab->pIndex) {
+      pIndex->pNext = pTab->pIndex;
+    }
+    pTab->pIndex = pIndex;
   }
-  pTab->pIndex = pIndex;
   pIndex = NULL;
 
   /* Clean up before exiting */
