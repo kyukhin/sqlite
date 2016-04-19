@@ -2800,6 +2800,7 @@ SIndex *sqlite3CreateIndex(
   int nExtraCol;                   /* Number of extra columns needed */
   char *zExtra = 0;                /* Extra space after the Index object */
   SIndex *pPk = 0;      /* PRIMARY KEY index for WITHOUT ROWID tables */
+  char fcreate_table = 0;
 
   if( db->mallocFailed || IN_DECLARE_VTAB || pParse->nErr>0 ){
     goto exit_create_index;
@@ -2859,6 +2860,7 @@ SIndex *sqlite3CreateIndex(
     iDb = sqlite3SchemaToIndex(db, pTab->pSchema);
   }
   pDb = &db->aDb[iDb];
+  fcreate_table = (pTab->pIndex == 0);
 
   assert( pTab!=0 );
   assert( pParse->nErr==0 );
@@ -3233,10 +3235,12 @@ SIndex *sqlite3CreateIndex(
   }
 
   pRet = pIndex;
-  if (pTab->pIndex) {
-    pIndex->pNext = pTab->pIndex;
+  if (fcreate_table) {
+    if (pTab->pIndex) {
+      pIndex->pNext = pTab->pIndex;
+    }
+    pTab->pIndex = pIndex;
   }
-  pTab->pIndex = pIndex;
   pIndex = NULL;
 
   /* Clean up before exiting */
