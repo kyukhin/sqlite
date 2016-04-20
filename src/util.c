@@ -245,8 +245,6 @@ void add_table_on_stack(const Table *table, Vdbe *v, sqlite3 *db) {
     sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
   if (table->zColAff)
     sqlite3VdbeAppendNestedMemory(v, (void *)table->zColAff, db);
-  if (table->pCheck) 
-    sqlite3VdbeAppendNestedMemory(v, (void *)table->pCheck, db);
 
   /* We don't need to delete any indexes, because the function will work only
    * with views */

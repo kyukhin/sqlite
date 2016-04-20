@@ -92,6 +92,8 @@ void sqlite3VdbeAppendNestedCallback(
 }
 
 void sqlite3VdbeAppendNestedMemory(Vdbe *p, void *mem, sqlite3 *db){
+  if (mem == 0) return;
+
   void **new_mem;
   sqlite3 **new_args;
 
