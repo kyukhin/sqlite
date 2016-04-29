@@ -5512,16 +5512,21 @@ int sqlite3BtreePrevious(BtCursor *pCur, int *pRes){
   assert( *pRes==0 || *pRes==1 );
   assert( pCur->skipNext==0 || pCur->eState!=CURSOR_VALID );
   *pRes = 0;
-  pCur->curFlags &= ~(BTCF_AtLast|BTCF_ValidOvfl|BTCF_ValidNKey);
-  pCur->info.nSize = 0;
-  if( pCur->eState!=CURSOR_VALID
-   || pCur->aiIdx[pCur->iPage]==0
-   || pCur->apPage[pCur->iPage]->leaf==0
-  ){
-    return btreePrevious(pCur, pRes);
+  if (pCur->is_tarantool) {
+    sql_tarantool_api *trn_api = &pCur->pBtree->db->trn_api;
+    return trn_api->trntl_cursor_prev(trn_api->self, pCur, pRes);
+  } else {
+    pCur->curFlags &= ~(BTCF_AtLast|BTCF_ValidOvfl|BTCF_ValidNKey);
+    pCur->info.nSize = 0;
+    if( pCur->eState!=CURSOR_VALID
+     || pCur->aiIdx[pCur->iPage]==0
+     || pCur->apPage[pCur->iPage]->leaf==0
+    ){
+      return btreePrevious(pCur, pRes);
+    }
+    pCur->aiIdx[pCur->iPage]--;
+    return SQLITE_OK;
   }
-  pCur->aiIdx[pCur->iPage]--;
-  return SQLITE_OK;
 }
 
 /*

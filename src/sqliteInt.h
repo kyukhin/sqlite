@@ -1156,6 +1156,7 @@ typedef struct sql_tarantool_api {
   const void *(*trntl_cursor_key_fetch)(void *self, BtCursor *pCur, u32 *pAmt);
   /* Move cursor forward */
   int (*trntl_cursor_next)(void *self, BtCursor *pCur, int *pRes);
+  int (*trntl_cursor_prev)(void *self, BtCursor *pCur, int *pRes);
 
   int (*trntl_cursor_insert)(void *self, BtCursor *pCur, const void *pKey,
     i64 nKey, const void *pData, int nData, int nZero, int appendBias,
