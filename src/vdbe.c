@@ -3766,7 +3766,12 @@ case OP_SeekGT: {       /* jump, in3 */
     assert( oc!=OP_SeekLE || r.default_rc==-1 );
     assert( oc!=OP_SeekGE || r.default_rc==+1 );
     assert( oc!=OP_SeekLT || r.default_rc==+1 );
-
+    // Add hint for tarantool
+    if (oc == OP_SeekLE || oc == OP_SeekLT) {
+      res = -1; // we need go through space from the end
+    } else {
+      res = 1; // from the start
+    }
     r.aMem = &aMem[pOp->p3];
 #ifdef SQLITE_DEBUG
     { int i; for(i=0; i<r.nField; i++) assert( memIsValid(&r.aMem[i]) ); }
