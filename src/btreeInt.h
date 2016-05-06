@@ -1,3 +1,6 @@
+#ifndef BTREEINT_H
+#define BTREEINT_H
+
 /*
 ** 2004 April 6
 **
@@ -711,4 +714,5 @@ struct IntegrityCk {
 # define get2byteAligned(x)  _byteswap_ushort(*(u16*)(x))
 #else
 # define get2byteAligned(x)  ((x)[0]<<8 | (x)[1])
+#endif
 #endif
