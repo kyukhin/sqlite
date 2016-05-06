@@ -85,6 +85,11 @@ Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
   res->nRowLogEst = src->nRowLogEst;
   res->szTabRow = src->szTabRow;
   res->nCol = src->nCol;
+
+  if (src->pSelect) {
+    res->pSelect = sqlite3SelectDup(db, src->pSelect, 0);
+  }
+
   if (res->nCol) {
     res->aCol = (Column *)sqlite3DbMallocZero(db, sizeof(Column) * res->nCol);
   }
@@ -103,6 +108,146 @@ Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
     sqlite3DbFree(db, copy);
   }
   return res;
+}
+
+
+/**
+ * Functions below add different parts of struct Table on vdbe stack for
+ * deletening. They will be freed when Vdbe will be finalized.
+ **/
+
+void add_select_on_stack(Select *pSelect, Vdbe *v, sqlite3 *d);
+
+void add_column_names_on_stack(const Table *table, Vdbe *v, sqlite3 *db);
+
+void add_table_on_stack(const Table *table, Vdbe *v, sqlite3 *db);
+
+void add_expr_list_on_stack(ExprList *pList, Vdbe *v, sqlite3 *db);
+
+void add_src_list_on_stack(SrcList *pList, Vdbe *v, sqlite3 *db);
+
+void add_with_on_stack(With *pWith, Vdbe *v, sqlite3 *db);
+
+void add_expr_on_stack(Expr *p, Vdbe *v, sqlite3 *db);
+
+void add_with_on_stack(With *pWith, Vdbe *v, sqlite3 *db){
+  if( pWith ){
+    int i;
+    for(i=0; i<pWith->nCte; i++){
+      struct Cte *pCte = &pWith->a[i];
+      add_expr_list_on_stack(pCte->pCols, v, db);
+      add_select_on_stack(pCte->pSelect, v, db);
+      sqlite3VdbeAppendNestedMemory(v, (void *)pCte->zName, db);
+    }
+    sqlite3VdbeAppendNestedMemory(v, (void *)pWith, db);
+  }
+}
+
+void add_id_list_on_stack(IdList *pList, Vdbe *v, sqlite3 *db){
+  int i;
+  if( pList==0 ) return;
+  for(i=0; i<pList->nId; i++){
+    sqlite3VdbeAppendNestedMemory(v, (void *)pList->a[i].zName, db);
+  }
+  sqlite3VdbeAppendNestedMemory(v, (void *)pList->a, db);
+  sqlite3VdbeAppendNestedMemory(v, (void *)pList, db);
+}
+
+void add_src_list_on_stack(SrcList *pList, Vdbe *v, sqlite3 *db){
+  int i;
+  struct SrcList_item *pItem;
+  if( pList==0 ) return;
+  for(pItem=pList->a, i=0; i<pList->nSrc; i++, pItem++){
+    sqlite3VdbeAppendNestedMemory(v, (void *) pItem->zDatabase, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *) pItem->zName, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *) pItem->zAlias, db);
+    if( pItem->fg.isIndexedBy )
+      sqlite3VdbeAppendNestedMemory(v, (void *)pItem->u1.zIndexedBy, db);
+    if( pItem->fg.isTabFunc )
+      add_expr_list_on_stack(pItem->u1.pFuncArg, v, db);
+    add_table_on_stack(pItem->pTab, v, db);
+    add_select_on_stack(pItem->pSelect, v, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *) pItem->pOn, db);
+    add_id_list_on_stack(pItem->pUsing, v, db);
+  }
+  sqlite3VdbeAppendNestedMemory(v, (void *) pList, db);
+}
+
+void add_column_names_on_stack(const Table *table, Vdbe *v, sqlite3 *db) {
+  if (table && table->aCol)
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
+  for (int i = 0; i < table->nCol; ++i) {
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
+  }
+}
+
+void add_expr_list_on_stack(ExprList *pList, Vdbe *v, sqlite3 *db) {
+  int i;
+  struct ExprList_item *pItem;
+  if( pList==0 ) return;
+  assert( pList->a!=0 || pList->nExpr==0 );
+  for(pItem=pList->a, i=0; i<pList->nExpr; i++, pItem++){
+    add_expr_on_stack(pItem->pExpr, v, db);
+    sqlite3VdbeAppendNestedMemory(v,(void *)pItem->zName, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *)pItem->zSpan, db);
+  }
+  sqlite3VdbeAppendNestedMemory(v, (void *)pList->a, db);
+  sqlite3VdbeAppendNestedMemory(v, (void *)pList, db);
+}
+
+void add_expr_on_stack(Expr *p, Vdbe *v, sqlite3 *db) {
+  if( p==0 ) return;
+  /* Sanity check: Assert that the IntValue is non-negative if it exists */
+  assert( !ExprHasProperty(p, EP_IntValue) || p->u.iValue>=0 );
+  if( !ExprHasProperty(p, EP_TokenOnly) ){
+    /* The Expr.x union is never used at the same time as Expr.pRight */
+    assert( p->x.pList==0 || p->pRight==0 );
+    add_expr_on_stack(p->pLeft, v, db);
+    add_expr_on_stack(p->pRight, v, db);
+    if( ExprHasProperty(p, EP_MemToken) ) sqlite3DbFree(db, p->u.zToken);
+    if( ExprHasProperty(p, EP_xIsSelect) ){
+      add_select_on_stack(p->x.pSelect, v, db);
+    }else{
+      add_expr_list_on_stack(p->x.pList, v, db);
+    }
+  }
+  if( !ExprHasProperty(p, EP_Static) ){
+     sqlite3VdbeAppendNestedMemory(v, (void *)p, db);
+  }
+}
+
+void  add_select_on_stack(Select *p, Vdbe *v, sqlite3 *db) {
+  while( p ){
+    Select *pPrior = p->pPrior;
+    add_expr_list_on_stack(p->pEList, v, db);
+    add_src_list_on_stack(p->pSrc, v, db);
+    add_expr_on_stack(p->pWhere, v, db);
+    add_expr_list_on_stack(p->pGroupBy, v, db);
+    add_expr_on_stack(p->pHaving, v, db);
+    add_expr_list_on_stack(p->pOrderBy, v, db);
+    add_expr_on_stack(p->pLimit, v, db);
+    add_expr_on_stack(p->pOffset, v, db);
+    add_with_on_stack(p->pWith, v, db);
+    sqlite3VdbeAppendNestedMemory(v, (void *) p, db);
+    p = pPrior;
+  }
+}
+
+void add_table_on_stack(const Table *table, Vdbe *v, sqlite3 *db) {
+  if (!table) 
+    return;
+  add_select_on_stack(table->pSelect, v, db);
+  add_expr_list_on_stack(table->pCheck, v, db);
+
+    sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
+  if (table->zName)
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+  if (table->zColAff)
+    sqlite3VdbeAppendNestedMemory(v, (void *)table->zColAff, db);
+
+  /* We don't need to delete any indexes, because the function will work only
+   * with views */
 }
 
 Column *make_deep_copy_Column(const Column *ob, sqlite3 *db) {

@@ -1764,7 +1764,7 @@ void sqlite3EndTable(
   sqlite3 *db = pParse->db; /* The database connection */
   int iDb;                  /* Database in which the table lives */
   SIndex *pIdx;              /* An implied index of the table */
-  
+
   int cnt, i;
   sql_tarantool_api *trn_api = &db->trn_api;
 
@@ -1777,7 +1777,7 @@ void sqlite3EndTable(
 
   char fcreate_table = (p->pSelect == 0);
   if (fcreate_table) tabOpts |= TF_WithoutRowid;
-  
+
   assert( !db->init.busy || !pSelect );
 
   /* If the db->init.busy is 1 it means we are reading the SQL off the
@@ -1822,7 +1822,11 @@ void sqlite3EndTable(
   }
 
 
+  int n;
   Vdbe *v;
+  char *zType;    /* "view" or "table" */
+  char *zType2;   /* "VIEW" or "TABLE" */
+  char *zStmt;    /* Text of the CREATE TABLE or CREATE VIEW statement */
   v = sqlite3GetVdbe(pParse);
   if( NEVER(v==0) ) return;
 
@@ -1833,9 +1837,36 @@ void sqlite3EndTable(
   ** file instead of into the main database file.
   */
   if( !db->init.busy ){
+    /* 
+    ** Initialize zType for the new view or table.
+    */
+    if( p->pSelect==0 ){
+      /* A regular table */
+      zType = "table";
+      zType2 = "TABLE";
+#ifndef SQLITE_OMIT_VIEW
+    }else{
+      /* A view */
+      zType = "view";
+      zType2 = "VIEW";
+#endif
+    }
+
+    /* Compute the complete text of the CREATE statement */
+    if( pSelect ){
+      zStmt = createTableStmt(db, p);
+    }else{
+      Token *pEnd2 = tabOpts ? &pParse->sLastToken : pEnd;
+      n = (int)(pEnd2->z - pParse->sNameToken.z);
+      if( pEnd2->z[0]!=';' ) n += pEnd2->n;
+      zStmt = sqlite3MPrintf(db, 
+          "CREATE %s %.*s", zType2, n, pParse->sNameToken.z
+      );
+    }
+
+    sql_tarantool_api *trn_api = &db->trn_api;
+    Table *table;
     if (fcreate_table) { //create table
-      sql_tarantool_api *trn_api = &db->trn_api;
-      Table *table;
       SIndex *index;
       int creating_index_aOp;
       int creating_index_nested;
@@ -1845,7 +1876,7 @@ void sqlite3EndTable(
       sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
 
       argv[0] = trn_api->self;
-      
+
       //allocate argv[1] and push it on memory stack for further freeing
       argv[1] = (void *)sqlite3DbStrDup(db, "_space");
       sqlite3VdbeAppendNestedMemory(v, argv[1], db);
@@ -1882,23 +1913,39 @@ void sqlite3EndTable(
       v->aOp[creating_index_aOp].p1 = v->nNestedOps - 1;
       sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, creating_index_nested); //exec inserting into _index
     } else {
+      /*
+      * This part is similar on part above, but here we wil create an view.
+      **/
+      int creating_view_nested;
       cnt = 1;
-      v->nNestedOps = cnt;
-      v->pNestedOps =  sqlite3DbMallocZero(db, sizeof(trntl_nested_func) * cnt);
-      v->pNestedConts =  sqlite3DbMallocZero(db, sizeof(struct NestedFuncContext) * cnt);
-      
-      trntl_nested_func *funcs = v->pNestedOps;
-      NestedFuncContext *conts = v->pNestedConts;
 
-      funcs[0] = trn_api->trntl_nested_insert_into_space;
-      int argc = 3;
+      int argc = 4;
       void **argv = (void **)sqlite3DbMallocZero(db, sizeof(void *) * argc);
+      sqlite3VdbeAppendNestedMemory(v, (void *)argv, db);
+
       argv[0] = trn_api->self;
-      argv[1] = (void *)sqlite3DbStrDup(db, "_space");
-      argv[2] = (void *)make_deep_copy_Table(p, db);
-      conts[0].argc = argc;
-      conts[0].argv = (void *)argv;
-      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, 0);
+      argv[1] = (void *)sqlite3DbStrDup(db, "_view");
+      sqlite3VdbeAppendNestedMemory(v, (void *)argv[1], db);
+
+      table = make_deep_copy_Table(p, db);
+      argv[2] = (void *)table;
+
+
+      sqlite3VdbeAppendNestedMemory(v, (void *)table, db);
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->zName, db);
+      //TODO: fix leak here
+      sqlite3VdbeAppendNestedMemory(v, (void *)table->pSelect, db);
+
+      argv[3] = (void *)sqlite3DbStrDup(db, zStmt);
+      sqlite3VdbeAppendNestedMemory(v, (void *)argv[3], db);
+
+      //table->nCol is equal 0 for view, hence we do not have to free table->aCol
+
+
+      sqlite3VdbeAppendNestedCallback(v, trn_api->trntl_nested_insert_into_space,
+        argc, argv, "creating view");
+      creating_view_nested = sqlite3VdbeNestedCallbackByID(v, "creating view", 0, 0, &argv);
+      sqlite3VdbeAddOp1(v, OP_ExecNestedCallback, creating_view_nested);
     }
   }
 
@@ -2340,7 +2387,7 @@ void sqlite3CodeDropTable(Parse *pParse, Table *pTab, int iDb, int isView){
   // sqlite3NestedParse(pParse, 
   //     "DELETE FROM %Q.%s WHERE tbl_name=%Q and type!='trigger'",
   //     pDb->zName, SCHEMA_TABLE(iDb), pTab->zName);
-  if( !isView && !IsVirtual(pTab) ){
+  if(!IsVirtual(pTab) ){
     destroyTable(pParse, pTab);
   }
 

@@ -502,12 +502,16 @@ abort_parse:
   sqlite3_free(pParse->apVtabLock);
 #endif
 
-  if( !IN_DECLARE_VTAB ){
+  if(!IN_DECLARE_VTAB  && pParse->pNewTable  && !pParse->pNewTable->pSelect){
     /* If the pParse->declareVtab flag is set, do not delete any table 
     ** structure built up in pParse->pNewTable. The calling code (see vtab.c)
     ** will take responsibility for freeing the Table structure.
+    ** Also we need pNewTable for view initilization purposes in sqlite.
     */
     sqlite3DeleteTable(db, pParse->pNewTable);
+  }
+  else if(!IN_DECLARE_VTAB && pParse->pNewTable){
+    add_table_on_stack(pParse->pNewTable, pParse->pVdbe, pParse->db);
   }
 
   if( pParse->bFreeWith ) sqlite3WithDelete(db, pParse->pWith);
