@@ -1037,6 +1037,11 @@ TESTFIXTURE_FLAGS = -DTCLSH=1 -DSQLITE_TEST=1
 TESTFIXTURE_FLAGS += -DSQLITE_PRIVATE="" -DSQLITE_CORE
 #TESTFIXTURE_FLAGS += -DBUILD_sqlite
 
+OS := $(shell uname)
+ifeq ($(OS),Darwin)
+	TESTFIXTURE_FLAGS += -F/System/Library/Frameworks -framework Tcl -undefined dynamic_lookup
+endif
+
 TESTFIXTURE_SRC0 = $(TESTSRC2) libsqlite3.la
 TESTFIXTURE_SRC1 = sqlite3.c
 TESTFIXTURE_SRC = $(TESTSRC) $(TOP)/src/tclsqlite.c
@@ -1052,11 +1057,10 @@ test_rtree.o test_schema.o test_server.o test_superlock.o test_syscall.o \
 test_tclvar.o test_thread.o test_vfs.o test_wsd.o totype.o wholenumber.o
 
 testfixture$(TEXE): $(TESTFIXTURE_SRC)
-	gcc -I./ -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -fPIC -g \
+	$(TCC) -I./ -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -fPIC -g \
     -c $(TESTFIXTURE_SRC) $(LIBTCL) $(TLIBS)
-	gcc -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) -undefined dynamic_lookup \
-    -shared -g -o testfixture.so $(TESTFIXTURE_OBJECTS)  $(LIBTCL) $(TLIBS) \
-	-F/System/Library/Frameworks -framework Tcl
+	$(TCC) -DSQLITE_NO_SYNC=1 $(TESTFIXTURE_FLAGS) \
+    -shared -g -o testfixture.so $(TESTFIXTURE_OBJECTS)  $(LIBTCL) $(TLIBS)
 
 # A very detailed test running most or all test cases
 fulltest:	$(TESTPROGS) fuzztest
@@ -1178,7 +1182,7 @@ releasetest:
 lib_install:	libsqlite3.la
 	$(INSTALL) -d $(DESTDIR)$(libdir)
 	$(LTINSTALL) libsqlite3.la $(DESTDIR)$(libdir)
-	
+
 install:	sqlite3$(BEXE) lib_install sqlite3.h sqlite3.pc ${HAVE_TCL:1=tcl_install}
 	$(INSTALL) -d $(DESTDIR)$(bindir)
 	$(LTINSTALL) sqlite3$(BEXE) $(DESTDIR)$(bindir)

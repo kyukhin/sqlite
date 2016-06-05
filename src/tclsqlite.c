@@ -3836,7 +3836,8 @@ static void init_all(Tcl_Interp *interp){
 
 int
 sql_callback(void *data, int cols, char **values, char **names) {
-  for (int i = 0; i < cols; ++i) {
+  int i;
+  for (i = 0; i < cols; ++i) {
     fprintf(stdout, "%s = %s;  ", names[i], values[i]);
   }
   fprintf(stdout, "\n");
