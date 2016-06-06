@@ -46,12 +46,14 @@ sql_result_init(struct sql_result *ob) {
 void
 sql_result_free(struct sql_result *ob) {
   if (ob->names != NULL) {
-    for (int i = 0; i < ob->cols; ++i) free(ob->names[i]);
+    int i;
+    for (i = 0; i < ob->cols; ++i) free(ob->names[i]);
     free(ob->names);
   }
   if (ob->values != NULL) {
-    for (int i = 0; i < ob->rows; ++i) {
-      for (int j = 0; j < ob->cols; ++j) {
+    int i, j;
+    for (i = 0; i < ob->rows; ++i) {
+      for (j = 0; j < ob->cols; ++j) {
         free(ob->values[i][j]);
       }
       free(ob->values[i]);

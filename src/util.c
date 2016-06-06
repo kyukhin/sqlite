@@ -28,7 +28,7 @@ SIndex *make_deep_copy_SIndex(const SIndex *src, sqlite3 *db) {
   int nColumn = src->nColumn;
   int nExtra = strlen(src->zName) + 1;
   char *pExtra = NULL;
-  int buf;
+  int buf, i;
   SIndex *res = sqlite3AllocateIndexObject(db, src->nColumn, nExtra, &pExtra);
   if (db->mallocFailed) {
     return NULL;
@@ -47,7 +47,7 @@ SIndex *make_deep_copy_SIndex(const SIndex *src, sqlite3 *db) {
   res->pNext = src->pNext;
   res->pSchema = src->pSchema;
   res->aSortOrder[0] = src->aSortOrder[0];
-  for (int i = 0; i < nColumn; ++i) {
+  for (i = 0; i < nColumn; ++i) {
     res->azColl[i] = sqlite3DbStrDup(db, src->azColl[i]);
   }
   res->tnum = src->tnum;
@@ -66,6 +66,7 @@ SIndex *make_deep_copy_SIndex(const SIndex *src, sqlite3 *db) {
 
 Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
   Parse p;
+  int i;
   memset(&p, 0, sizeof(p));
   p.is_trntl_init = 1;
   Token name1, name2;
@@ -97,7 +98,7 @@ Table *make_deep_copy_Table(const Table *src, sqlite3 *db) {
     sqlite3_free(res);
     return NULL;
   }
-  for (int i = 0; i < res->nCol; ++i) {
+  for (i = 0; i < res->nCol; ++i) {
     Column *copy = make_deep_copy_Column((const Column *)(&src->aCol[i]), db);
     if (!copy) {
       sqlite3DbFree(db, res->aCol);
@@ -174,9 +175,10 @@ void add_src_list_on_stack(SrcList *pList, Vdbe *v, sqlite3 *db){
 }
 
 void add_column_names_on_stack(const Table *table, Vdbe *v, sqlite3 *db) {
+  int i;
   if (table && table->aCol)
     sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol, db);
-  for (int i = 0; i < table->nCol; ++i) {
+  for (i = 0; i < table->nCol; ++i) {
     sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zName, db);
     sqlite3VdbeAppendNestedMemory(v, (void *)table->aCol[i].zType, db);
   }
